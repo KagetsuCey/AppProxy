@@ -259,6 +259,13 @@
                                                            Margin="0,0,6,0"
                                                            Command="{Binding DataContext.LaunchAppCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}" />
+                                                <ui:Button Content="创建快捷方式"
+                                                           Icon="{ui:SymbolIcon Desktop24}"
+                                                           Appearance="Secondary"
+                                                           Margin="0,0,6,0"
+                                                           ToolTip="在桌面创建快捷方式，双击即可不打开 UI 直接启动代理"
+                                                           Command="{Binding DataContext.CreateDesktopShortcutCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding}" />
                                                 <ui:Button Icon="{ui:SymbolIcon Edit24}"
                                                            Appearance="Secondary"
                                                            Margin="0,0,6,0"

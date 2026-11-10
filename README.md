@@ -20,7 +20,7 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
   - Hook `getaddrinfo`、`GetAddrInfoW`、`GetAddrInfoExW`、`gethostbyname` 与对应的 `freeaddrinfo*`。
   - 域名在本地分配虚拟 IP 并写入跨进程共享内存，实际隧道建立时由独立桥接器还原原始域名发送给代理服务器（零本地 DNS 泄漏）。
 - **C# .NET 8 WPF Fluent UI**：
-  - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`）自动提取图标、启动参数、工作目录与 PE 架构识别，快速切换代理与一键注入启动。
+  - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`）自动提取图标、启动参数、工作目录与 PE 架构识别，快速切换代理与一键注入启动；支持为任意应用生成桌面快捷方式，无需打开 UI 界面即可双击直接以代理模式启动。
   - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）及实时握手延迟测速。
   - 实时监控：通过命名管道聚合所有活跃后台桥接的连接目标、Fake-IP、代理状态、握手延迟、实时上传/下载字节统计及进程注入/DNS 事件日志。
   - 便携配置：所有配置默认保存在 `AppProxy.UI.exe` 同级目录的 `config.json` 中（不依赖 `%AppData%`）。

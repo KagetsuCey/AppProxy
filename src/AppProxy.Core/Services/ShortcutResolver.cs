@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using AppProxy.UI.Models;
 
 namespace AppProxy.UI.Services;
 
@@ -257,6 +258,113 @@ public static class ShortcutResolver
 
         targetExe = resolvedAppExe;
         arguments = extractedArgs;
+    }
+
+    public static string CreateAppDesktopShortcut(
+        AppProfile app,
+        string? customDesktopDir = null,
+        string? customBaseDir = null)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        string desktopDir = !string.IsNullOrWhiteSpace(customDesktopDir)
+            ? customDesktopDir
+            : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (string.IsNullOrWhiteSpace(desktopDir))
+        {
+            desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        }
+        Directory.CreateDirectory(desktopDir);
+
+        string baseDir = !string.IsNullOrWhiteSpace(customBaseDir)
+            ? customBaseDir
+            : AppContext.BaseDirectory;
+        string bridgeExePath = Path.Combine(baseDir, "AppProxy.Bridge.exe");
+
+        string rawName = !string.IsNullOrWhiteSpace(app.Name)
+            ? app.Name
+            : Path.GetFileNameWithoutExtension(app.ExePath);
+        string safeName = SanitizeShortcutFileName(rawName);
+        string shortcutPath = Path.Combine(desktopDir, $"{safeName} (AppProxy).lnk");
+
+        object? comObj = null;
+        try
+        {
+            Type shellLinkType = Type.GetTypeFromCLSID(ClsidShellLink)
+                ?? throw new InvalidOperationException("Windows ShellLink COM class unavailable.");
+            comObj = Activator.CreateInstance(shellLinkType)!;
+            var link = (IShellLinkW)comObj;
+            var persist = (IPersistFile)comObj;
+
+            link.SetPath(bridgeExePath);
+            link.SetArguments($"--launch-app-id {app.Id:D}");
+            link.SetWorkingDirectory(baseDir);
+            link.SetDescription($"通过 AppProxy 代理启动 {rawName}");
+
+            if (!string.IsNullOrWhiteSpace(app.ExePath) && File.Exists(app.ExePath))
+            {
+                link.SetIconLocation(app.ExePath, 0);
+            }
+
+            persist.Save(shortcutPath, true);
+            return shortcutPath;
+        }
+        finally
+        {
+            if (comObj is not null && Marshal.IsComObject(comObj))
+            {
+                Marshal.ReleaseComObject(comObj);
+            }
+        }
+    }
+
+    public static (string TargetPath, string Arguments, string WorkingDirectory, string IconPath, int IconIndex) InspectShortcutForTest(string lnkPath)
+    {
+        object? comObj = null;
+        try
+        {
+            Type shellLinkType = Type.GetTypeFromCLSID(ClsidShellLink)
+                ?? throw new InvalidOperationException("ShellLink COM class unavailable.");
+            comObj = Activator.CreateInstance(shellLinkType)!;
+            var link = (IShellLinkW)comObj;
+            var persist = (IPersistFile)comObj;
+
+            persist.Load(lnkPath, STGM_READ);
+
+            var pathBuf = new StringBuilder(1024);
+            link.GetPath(pathBuf, pathBuf.Capacity, IntPtr.Zero, SLGP_RAWPATH);
+
+            var argsBuf = new StringBuilder(2048);
+            link.GetArguments(argsBuf, argsBuf.Capacity);
+
+            var dirBuf = new StringBuilder(1024);
+            link.GetWorkingDirectory(dirBuf, dirBuf.Capacity);
+
+            var iconBuf = new StringBuilder(1024);
+            link.GetIconLocation(iconBuf, iconBuf.Capacity, out int iconIdx);
+
+            return (pathBuf.ToString(), argsBuf.ToString(), dirBuf.ToString(), iconBuf.ToString(), iconIdx);
+        }
+        finally
+        {
+            if (comObj is not null && Marshal.IsComObject(comObj))
+            {
+                Marshal.ReleaseComObject(comObj);
+            }
+        }
+    }
+
+    private static string SanitizeShortcutFileName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "AppProxy App";
+        char[] invalid = Path.GetInvalidFileNameChars();
+        var sb = new StringBuilder(name.Length);
+        foreach (char c in name.Trim())
+        {
+            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+        }
+        string cleaned = sb.ToString().Trim('.', ' ');
+        return string.IsNullOrEmpty(cleaned) ? "AppProxy App" : cleaned;
     }
 
     public static void CreateShortcutForTest(string lnkPath, string targetExePath, string arguments = "", string workingDirectory = "")

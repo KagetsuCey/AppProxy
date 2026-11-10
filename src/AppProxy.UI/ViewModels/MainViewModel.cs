@@ -317,6 +317,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    [RelayCommand]
+    private void CreateDesktopShortcut(AppProfile? app)
+    {
+        if (app is null) return;
+        try
+        {
+            SaveConfiguration();
+            string shortcutPath = ShortcutResolver.CreateAppDesktopShortcut(app);
+            StatusMessage = $"已在桌面创建快捷方式: {Path.GetFileName(shortcutPath)}";
+        }
+        catch (Exception ex)
+        {
+            string err = $"创建桌面快捷方式失败: {ex.Message}";
+            StatusMessage = err;
+            System.Windows.MessageBox.Show(err, "AppProxy", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     public void AddOrUpdateProxy(ProxyProfile edited)
     {
         var existing = Proxies.FirstOrDefault(p => p.Id == edited.Id);

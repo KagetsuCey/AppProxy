@@ -1,4 +1,5 @@
 using System.IO;
+using AppProxy.UI.Models;
 using AppProxy.UI.Services;
 using Xunit;
 
@@ -114,6 +115,45 @@ public class ShortcutResolverTests
             ResolvedAppTarget shortcutTxt = ShortcutResolver.ResolveInputPath(lnkToTxt);
             Assert.False(shortcutTxt.Ok);
             Assert.Contains(".exe", shortcutTxt.Error ?? string.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void CreateAppDesktopShortcut_GeneratesShortcutPointingToBridgeWithAppId()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "AppProxyDesktopShortcut_" + Guid.NewGuid().ToString("N"));
+        string desktopDir = Path.Combine(tempDir, "Desktop");
+        string baseDir = Path.Combine(tempDir, "AppBin");
+        Directory.CreateDirectory(desktopDir);
+        Directory.CreateDirectory(baseDir);
+
+        try
+        {
+            string cmdExe = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            var app = new AppProfile
+            {
+                Id = Guid.Parse("11111111-2222-3333-4444-555555555555"),
+                Name = "Edge / Browser",
+                ExePath = cmdExe
+            };
+
+            string shortcutPath = ShortcutResolver.CreateAppDesktopShortcut(app, desktopDir, baseDir);
+            Assert.True(File.Exists(shortcutPath));
+            Assert.Equal("Edge _ Browser (AppProxy).lnk", Path.GetFileName(shortcutPath));
+
+            var (targetPath, arguments, workDir, iconPath, iconIdx) = ShortcutResolver.InspectShortcutForTest(shortcutPath);
+            Assert.Equal(Path.Combine(baseDir, "AppProxy.Bridge.exe"), targetPath, ignoreCase: true);
+            Assert.Equal("--launch-app-id 11111111-2222-3333-4444-555555555555", arguments);
+            Assert.Equal(baseDir, workDir, ignoreCase: true);
+            Assert.Equal(cmdExe, iconPath, ignoreCase: true);
+            Assert.Equal(0, iconIdx);
         }
         finally
         {
