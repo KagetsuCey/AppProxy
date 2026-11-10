@@ -265,24 +265,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = $"Saved application: {edited.Name}";
     }
 
-    public void AddQuickAppFromPath(string exePath)
+    public void AddQuickAppFromPath(string filePath)
     {
-        if (!File.Exists(exePath) || !exePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        var resolved = ShortcutResolver.ResolveInputPath(filePath);
+        if (!resolved.Ok)
         {
-            StatusMessage = "Please drop a valid .exe executable.";
+            StatusMessage = resolved.Error ?? "Please drop a valid .exe executable or .lnk shortcut.";
             return;
         }
 
         var defaultProxy = Proxies.FirstOrDefault();
         var app = new AppProfile
         {
-            Name = Path.GetFileNameWithoutExtension(exePath),
-            ExePath = exePath,
-            WorkingDirectory = Path.GetDirectoryName(exePath) ?? string.Empty,
+            Name = resolved.DisplayName,
+            ExePath = resolved.TargetExePath,
+            Arguments = resolved.Arguments,
+            WorkingDirectory = resolved.WorkingDirectory,
             ProxyProfileId = defaultProxy?.Id,
             RemoteDns = true,
             BypassLan = true,
-            InjectChildren = true
+            InjectChildren = true,
+            IsolateProfileDir = AppProfile.IsChromiumBrowserExe(resolved.TargetExePath)
         };
         AddOrUpdateApp(app);
     }

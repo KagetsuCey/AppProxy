@@ -127,7 +127,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="应用管理" FontSize="22" FontWeight="Bold" />
-                            <TextBlock Text="配置目标应用与代理绑定，点击启动将自动通过 DLL 注入接管网络与 DNS（支持拖拽 .exe 添加）"
+                            <TextBlock Text="配置目标应用与代理绑定，点击启动将自动通过 DLL 注入接管网络与 DNS（支持拖拽 .exe 或快捷方式 .lnk 添加）"
                                        FontSize="12"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
@@ -165,7 +165,7 @@
                         </Border.Style>
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="Apps24" Margin="0,0,10,0" VerticalAlignment="Center" />
-                            <TextBlock Text="当前还没有配置任何应用。点击右上角「添加应用」，或直接把 .exe 文件拖放到此处即可快速创建。"
+                            <TextBlock Text="当前还没有配置任何应用。点击右上角「添加应用」，或直接把 .exe / 应用快捷方式 (.lnk) 拖放到此处即可快速创建。"
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>

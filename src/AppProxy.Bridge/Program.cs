@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using AppProxy.UI.Services;
 
@@ -8,32 +9,42 @@ internal static class Program
     [STAThread]
     private static async Task<int> Main(string[] args)
     {
-        Console.OutputEncoding = Encoding.UTF8;
-
-        string? launchB64 = null;
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (args[i] == "--launch-b64" && i + 1 < args.Length)
-            {
-                launchB64 = args[++i];
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(launchB64))
-        {
-            WriteHandshakeAndCloseStdout(new BridgeHandshakeResponse
-            {
-                Ok = false,
-                BridgePid = (uint)Environment.ProcessId,
-                Error = "Missing --launch-b64 argument."
-            });
-            return 2;
-        }
-
-        BridgeLaunchRequest? request;
         try
         {
-            request = BridgeIpcCodec.DecodeLaunchRequestBase64(launchB64);
+            string? launchB64 = null;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--launch-b64" && i + 1 < args.Length)
+                {
+                    launchB64 = args[++i];
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(launchB64))
+            {
+                WriteHandshakeAndCloseStdout(new BridgeHandshakeResponse
+                {
+                    Ok = false,
+                    BridgePid = (uint)Environment.ProcessId,
+                    Error = "Missing --launch-b64 argument."
+                });
+                return 2;
+            }
+
+            BridgeLaunchRequest? request = BridgeIpcCodec.DecodeLaunchRequestBase64(launchB64);
+            if (request is null || string.IsNullOrWhiteSpace(request.ExePath))
+            {
+                WriteHandshakeAndCloseStdout(new BridgeHandshakeResponse
+                {
+                    Ok = false,
+                    BridgePid = (uint)Environment.ProcessId,
+                    Error = "Launch request missing target executable path."
+                });
+                return 2;
+            }
+
+            using var host = new BridgeDaemonHost(request);
+            return await host.RunAsync(WriteHandshakeAndCloseStdout);
         }
         catch (Exception ex)
         {
@@ -41,24 +52,10 @@ internal static class Program
             {
                 Ok = false,
                 BridgePid = (uint)Environment.ProcessId,
-                Error = $"Invalid launch payload: {ex.Message}"
+                Error = $"Bridge startup error: {ex.Message}"
             });
-            return 2;
+            return 1;
         }
-
-        if (request is null || string.IsNullOrWhiteSpace(request.ExePath))
-        {
-            WriteHandshakeAndCloseStdout(new BridgeHandshakeResponse
-            {
-                Ok = false,
-                BridgePid = (uint)Environment.ProcessId,
-                Error = "Launch request missing target executable path."
-            });
-            return 2;
-        }
-
-        using var host = new BridgeDaemonHost(request);
-        return await host.RunAsync(WriteHandshakeAndCloseStdout);
     }
 
     private static void WriteHandshakeAndCloseStdout(BridgeHandshakeResponse response)
@@ -66,9 +63,10 @@ internal static class Program
         try
         {
             string line = BridgeIpcCodec.SerializeLine(response);
-            Console.Out.WriteLine(line);
-            Console.Out.Flush();
-            Console.Out.Close();
+            using Stream stdout = Console.OpenStandardOutput();
+            using var writer = new StreamWriter(stdout, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            writer.WriteLine(line);
+            writer.Flush();
         }
         catch
         {

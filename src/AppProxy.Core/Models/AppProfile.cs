@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json.Serialization;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -6,6 +7,16 @@ namespace AppProxy.UI.Models;
 
 public partial class AppProfile : ObservableObject
 {
+    private static readonly HashSet<string> ChromiumBrowserExes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "msedge.exe",
+        "chrome.exe",
+        "brave.exe",
+        "vivaldi.exe",
+        "opera.exe",
+        "chromium.exe"
+    };
+
     [ObservableProperty]
     private Guid _id = Guid.NewGuid();
 
@@ -34,6 +45,9 @@ public partial class AppProfile : ObservableObject
     private bool _injectChildren = true;
 
     [ObservableProperty]
+    private bool? _isolateProfileDir;
+
+    [ObservableProperty]
     private string _detectedArch = "x64";
 
     [ObservableProperty]
@@ -43,6 +57,16 @@ public partial class AppProfile : ObservableObject
     [ObservableProperty]
     [property: JsonIgnore]
     private string _boundProxyName = "Direct";
+
+    public static bool IsChromiumBrowserExe(string? exePath)
+    {
+        if (string.IsNullOrWhiteSpace(exePath)) return false;
+        string fileName = Path.GetFileName(exePath);
+        return !string.IsNullOrEmpty(fileName) && ChromiumBrowserExes.Contains(fileName);
+    }
+
+    public bool GetEffectiveIsolateProfileDir() =>
+        IsolateProfileDir ?? IsChromiumBrowserExe(ExePath);
 
     public AppProfile Clone() => new()
     {
@@ -55,6 +79,7 @@ public partial class AppProfile : ObservableObject
         RemoteDns = RemoteDns,
         BypassLan = BypassLan,
         InjectChildren = InjectChildren,
+        IsolateProfileDir = IsolateProfileDir,
         DetectedArch = DetectedArch,
         Icon = Icon,
         BoundProxyName = BoundProxyName

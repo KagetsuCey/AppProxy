@@ -101,4 +101,36 @@ public class BridgeLifecycleTests
         Assert.True(pid > 0);
         Assert.Equal("detached-handshake", firstLine.Trim());
     }
+
+    [Fact]
+    public void ChromiumBrowserIsolation_DetectsBrowsersAndAppendsUserDataDir()
+    {
+        Assert.True(AppProfile.IsChromiumBrowserExe(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"));
+        Assert.True(AppProfile.IsChromiumBrowserExe(@"C:\Program Files\Google\Chrome\Application\chrome.exe"));
+        Assert.False(AppProfile.IsChromiumBrowserExe(@"C:\Windows\System32\curl.exe"));
+
+        var legacyEdgeProfile = new AppProfile
+        {
+            Name = "Microsoft Edge",
+            ExePath = @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            IsolateProfileDir = null
+        };
+        Assert.True(legacyEdgeProfile.GetEffectiveIsolateProfileDir());
+
+        var req = new BridgeLaunchRequest
+        {
+            AppName = "Microsoft Edge",
+            ExePath = legacyEdgeProfile.ExePath,
+            Arguments = "--no-first-run",
+            IsolateProfileDir = true
+        };
+
+        string effective = req.BuildEffectiveArguments(@"D:\Apps\AppProxy");
+        Assert.Contains("--no-first-run", effective);
+        Assert.Contains(@"--user-data-dir=""D:\Apps\AppProxy\profiles\Microsoft Edge""", effective);
+
+        // Must not duplicate --user-data-dir if user already supplied one
+        req.Arguments = @"--user-data-dir=""D:\CustomEdgeProfile""";
+        Assert.Equal(@"--user-data-dir=""D:\CustomEdgeProfile""", req.BuildEffectiveArguments(@"D:\Apps\AppProxy"));
+    }
 }

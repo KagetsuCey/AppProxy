@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -28,8 +29,42 @@ public sealed class BridgeLaunchRequest
     [JsonPropertyName("injectChildren")]
     public bool InjectChildren { get; set; } = true;
 
+    [JsonPropertyName("isolateProfileDir")]
+    public bool IsolateProfileDir { get; set; }
+
     [JsonPropertyName("proxy")]
     public BridgeProxyConfig? Proxy { get; set; }
+
+    public string BuildEffectiveArguments(string baseDir)
+    {
+        string rawArgs = Arguments?.Trim() ?? string.Empty;
+        if (!IsolateProfileDir ||
+            rawArgs.Contains("--user-data-dir", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawArgs;
+        }
+
+        string seedName = !string.IsNullOrWhiteSpace(AppName)
+            ? AppName
+            : Path.GetFileNameWithoutExtension(ExePath);
+        string safeFolder = SanitizeDirectoryName(seedName);
+        string profileDir = Path.Combine(baseDir, "profiles", safeFolder);
+        string userDataArg = $"--user-data-dir=\"{profileDir}\"";
+        return string.IsNullOrEmpty(rawArgs) ? userDataArg : $"{rawArgs} {userDataArg}";
+    }
+
+    private static string SanitizeDirectoryName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "DefaultApp";
+        char[] invalid = Path.GetInvalidFileNameChars();
+        var sb = new StringBuilder(name.Length);
+        foreach (char c in name.Trim())
+        {
+            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+        }
+        string cleaned = sb.ToString().Trim('.', ' ');
+        return string.IsNullOrEmpty(cleaned) ? "DefaultApp" : cleaned;
+    }
 }
 
 public sealed class BridgeProxyConfig

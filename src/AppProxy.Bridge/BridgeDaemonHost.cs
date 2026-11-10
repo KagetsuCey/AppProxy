@@ -200,8 +200,9 @@ internal sealed class BridgeDaemonHost : IDisposable
         StartUiTelemetryPipeServer();
         _ = TelemetryTickerLoopAsync(_cts.Token);
 
+        string effectiveArgs = _request.BuildEffectiveArguments(AppContext.BaseDirectory);
         string exeB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(_request.ExePath));
-        string argsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(_request.Arguments ?? string.Empty));
+        string argsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(effectiveArgs));
         string workDir = string.IsNullOrWhiteSpace(_request.WorkingDirectory)
             ? (Path.GetDirectoryName(_request.ExePath) ?? string.Empty)
             : _request.WorkingDirectory;
@@ -226,7 +227,9 @@ internal sealed class BridgeDaemonHost : IDisposable
         };
 
         string exeNameNoExt = Path.GetFileNameWithoutExtension(_request.ExePath);
-        int existingInstances = CountRunningInstances(_request.ExePath, exeNameNoExt);
+        int existingInstances = _request.IsolateProfileDir
+            ? 0
+            : CountRunningInstances(_request.ExePath, exeNameNoExt);
 
         int exitCode;
         string stdout;

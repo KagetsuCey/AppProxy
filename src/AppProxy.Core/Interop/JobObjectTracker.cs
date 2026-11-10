@@ -346,14 +346,23 @@ public sealed class JobObjectTracker : IDisposable
         }
     }
 
+    private sealed class ProcessWaitHandle : WaitHandle
+    {
+        public ProcessWaitHandle(SafeProcessHandle processHandle)
+        {
+            SafeWaitHandle = new SafeWaitHandle(processHandle.DangerousGetHandle(), ownsHandle: false);
+        }
+    }
+
     private static Task WaitForProcessHandleAsync(SafeProcessHandle handle, CancellationToken ct)
     {
+        var waitHandle = new ProcessWaitHandle(handle);
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         RegisteredWaitHandle? reg = null;
         CancellationTokenRegistration ctr = default;
 
         reg = ThreadPool.RegisterWaitForSingleObject(
-            handle,
+            waitHandle,
             static (state, _) => ((TaskCompletionSource)state!).TrySetResult(),
             tcs,
             Timeout.Infinite,
@@ -369,6 +378,7 @@ public sealed class JobObjectTracker : IDisposable
             {
                 reg?.Unregister(null);
                 ctr.Dispose();
+                waitHandle.Dispose();
             },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,

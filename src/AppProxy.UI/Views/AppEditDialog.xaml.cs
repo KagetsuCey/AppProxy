@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using AppProxy.UI.Models;
+using AppProxy.UI.Services;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;
 
@@ -9,6 +10,7 @@ namespace AppProxy.UI.Views;
 public partial class AppEditDialog : FluentWindow
 {
     private sealed record ProxyChoice(Guid? Id, string DisplayName);
+    private bool _isolateToggledByUser;
 
     public AppProfile ResultApp { get; private set; }
 
@@ -17,6 +19,7 @@ public partial class AppEditDialog : FluentWindow
         InitializeComponent();
 
         ResultApp = existing?.Clone() ?? new AppProfile();
+        _isolateToggledByUser = existing is not null;
 
         var choices = new List<ProxyChoice> { new(null, "直连 (Direct - 不走代理)") };
         choices.AddRange(proxies.Select(p => new ProxyChoice(p.Id, $"{p.Name} ({p.ProtocolDisplay} {p.EndpointDisplay})")));
@@ -35,25 +38,52 @@ public partial class AppEditDialog : FluentWindow
         RemoteDnsToggle.IsChecked = ResultApp.RemoteDns;
         BypassLanToggle.IsChecked = ResultApp.BypassLan;
         InjectChildrenToggle.IsChecked = ResultApp.InjectChildren;
+        IsolateProfileToggle.IsChecked = ResultApp.GetEffectiveIsolateProfileDir();
+    }
+
+    private void OnIsolateProfileClick(object sender, RoutedEventArgs e)
+    {
+        _isolateToggledByUser = true;
     }
 
     private void OnBrowseExe(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFileDialog
         {
-            Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-            Title = "选择要注入代理的应用程序"
+            Filter = "应用程序与快捷方式 (*.exe;*.lnk)|*.exe;*.lnk|可执行文件 (*.exe)|*.exe|快捷方式 (*.lnk)|*.lnk|所有文件 (*.*)|*.*",
+            Title = "选择要注入代理的应用程序或快捷方式",
+            DereferenceLinks = false
         };
         if (dlg.ShowDialog(this) == true)
         {
-            ExePathBox.Text = dlg.FileName;
+            var resolved = ShortcutResolver.ResolveInputPath(dlg.FileName);
+            if (!resolved.Ok)
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    resolved.Error ?? "无法解析所选文件。",
+                    "提示",
+                    System.Windows.MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            ExePathBox.Text = resolved.TargetExePath;
             if (string.IsNullOrWhiteSpace(NameBox.Text))
             {
-                NameBox.Text = Path.GetFileNameWithoutExtension(dlg.FileName);
+                NameBox.Text = resolved.DisplayName;
+            }
+            if (!string.IsNullOrWhiteSpace(resolved.Arguments) && string.IsNullOrWhiteSpace(ArgsBox.Text))
+            {
+                ArgsBox.Text = resolved.Arguments;
             }
             if (string.IsNullOrWhiteSpace(WorkDirBox.Text))
             {
-                WorkDirBox.Text = Path.GetDirectoryName(dlg.FileName) ?? string.Empty;
+                WorkDirBox.Text = resolved.WorkingDirectory;
+            }
+            if (!_isolateToggledByUser)
+            {
+                IsolateProfileToggle.IsChecked = AppProfile.IsChromiumBrowserExe(resolved.TargetExePath);
             }
         }
     }
@@ -77,6 +107,7 @@ public partial class AppEditDialog : FluentWindow
         ResultApp.RemoteDns = RemoteDnsToggle.IsChecked == true;
         ResultApp.BypassLan = BypassLanToggle.IsChecked == true;
         ResultApp.InjectChildren = InjectChildrenToggle.IsChecked == true;
+        ResultApp.IsolateProfileDir = IsolateProfileToggle.IsChecked == true;
 
         DialogResult = true;
         Close();

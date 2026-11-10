@@ -4,7 +4,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="配置应用"
                  Width="540"
-                 Height="540"
+                 Height="605"
                  ResizeMode="NoResize"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
@@ -68,7 +68,7 @@
                             <ui:ToggleSwitch x:Name="BypassLanToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Grid>
+                        <Grid Margin="0,0,0,10">
                             <StackPanel>
                                 <TextBlock Text="自动注入子进程 (x86 / x64)" FontWeight="SemiBold" />
                                 <TextBlock Text="Hook CreateProcessW/A，自动代理派生出的所有子进程"
@@ -76,6 +76,17 @@
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="InjectChildrenToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid>
+                            <StackPanel Margin="0,0,60,0">
+                                <TextBlock Text="独立浏览器数据目录 (--user-data-dir)" FontWeight="SemiBold" />
+                                <TextBlock Text="为 Edge/Chrome 自动分配独立目录，避免被后台常驻单实例接管"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="IsolateProfileToggle" HorizontalAlignment="Right" VerticalAlignment="Center" Click="OnIsolateProfileClick" />
                         </Grid>
                     </StackPanel>
                 </Border>

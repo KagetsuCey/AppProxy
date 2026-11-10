@@ -19,6 +19,7 @@ Release/
 third_party/minhook/
 third_party/*.zip
 
-# Runtime user config
+# Runtime user config & isolated browser profiles
 config.json
+profiles/
 *.log

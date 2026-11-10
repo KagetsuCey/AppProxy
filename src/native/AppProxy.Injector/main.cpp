@@ -2,6 +2,7 @@
 #include "LogProtocol.h"
 
 #include <windows.h>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -76,6 +77,83 @@ void PrintJsonError(const std::string& err) {
     std::printf("{\"ok\":false,\"error\":\"%s\"}\n", AppProxy::IPC::EscapeJsonString(err).c_str());
 }
 
+bool CreateSuspendedTargetProcess(
+    const std::wstring& exePath,
+    std::vector<wchar_t>& cmdBuf,
+    const std::wstring& workDir,
+    PROCESS_INFORMATION& outPi,
+    DWORD& outError) {
+    LPCWSTR dirPtr = workDir.empty() ? nullptr : workDir.c_str();
+
+    // Explicitly disable CIG (MicrosoftSignedOnly) and ACG on the target process
+    // so Microsoft-signed browsers like msedge.exe allow loading AppProxy.Hook.dll.
+    SIZE_T attrSize = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    if (attrSize > 0) {
+        std::vector<uint8_t> attrBuf(attrSize, 0);
+        auto attrList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuf.data());
+        if (InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize)) {
+            DWORD64 mitigationPolicy =
+                PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_OFF |
+                PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_OFF;
+
+            if (UpdateProcThreadAttribute(
+                    attrList,
+                    0,
+                    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
+                    &mitigationPolicy,
+                    sizeof(mitigationPolicy),
+                    nullptr,
+                    nullptr)) {
+                STARTUPINFOEXW siEx{};
+                siEx.StartupInfo.cb = sizeof(STARTUPINFOEXW);
+                siEx.lpAttributeList = attrList;
+
+                std::vector<wchar_t> cmdCopy = cmdBuf;
+                BOOL ok = CreateProcessW(
+                    exePath.c_str(),
+                    cmdCopy.data(),
+                    nullptr,
+                    nullptr,
+                    FALSE,
+                    CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+                    nullptr,
+                    dirPtr,
+                    &siEx.StartupInfo,
+                    &outPi);
+                DWORD err = ok ? 0 : GetLastError();
+                DeleteProcThreadAttributeList(attrList);
+                if (ok) {
+                    return true;
+                }
+                // Fall back to standard CreateProcessW if extended mitigation flags are rejected
+                outError = err;
+            } else {
+                DeleteProcThreadAttributeList(attrList);
+            }
+        }
+    }
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    if (CreateProcessW(
+            exePath.c_str(),
+            cmdBuf.data(),
+            nullptr,
+            nullptr,
+            FALSE,
+            CREATE_SUSPENDED,
+            nullptr,
+            dirPtr,
+            &si,
+            &outPi)) {
+        return true;
+    }
+
+    outError = GetLastError();
+    return false;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -120,7 +198,7 @@ int wmain(int argc, wchar_t* argv[]) {
             PrintJsonError("OpenProcess failed");
             return 1;
         }
-        HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, targetTid);
+        HANDLE hThread = OpenThread(THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, targetTid);
         if (!hThread) {
             CloseHandle(hProc);
             PrintJsonError("OpenThread failed");
@@ -163,22 +241,11 @@ int wmain(int argc, wchar_t* argv[]) {
             }
         }
 
-        STARTUPINFOW si{};
-        si.cb = sizeof(si);
         PROCESS_INFORMATION pi{};
-        if (!CreateProcessW(
-                exePath.c_str(),
-                cmdBuf.data(),
-                nullptr,
-                nullptr,
-                FALSE,
-                CREATE_SUSPENDED,
-                nullptr,
-                workDir.empty() ? nullptr : workDir.c_str(),
-                &si,
-                &pi)) {
+        DWORD createErr = 0;
+        if (!CreateSuspendedTargetProcess(exePath, cmdBuf, workDir, pi, createErr)) {
             char buf[128]{};
-            std::snprintf(buf, sizeof(buf), "CreateProcessW failed (Win32 error %lu)", GetLastError());
+            std::snprintf(buf, sizeof(buf), "CreateProcessW failed (Win32 error %lu)", createErr);
             PrintJsonError(buf);
             return 1;
         }

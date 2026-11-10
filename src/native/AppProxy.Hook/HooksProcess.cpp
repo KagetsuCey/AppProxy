@@ -186,124 +186,25 @@ bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring&
         return std::string(buf);
     };
 
-    static auto fnNtQueryInfo = reinterpret_cast<FnNtQueryInformationProcess>(
-        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess"));
-    if (!fnNtQueryInfo) {
-        outDetail = "NtQueryInformationProcess missing";
+    if (!hProcess || !hThread) {
+        outDetail = "Invalid child process/thread handle";
         return false;
     }
 
-    NtProcessBasicInfo pbi{};
-    ULONG retLen = 0;
-    if (fnNtQueryInfo(hProcess, 0 /*ProcessBasicInformation*/, &pbi, sizeof(pbi), &retLen) != 0 ||
-        !pbi.PebBaseAddress) {
-        outDetail = "NtQueryInformationProcess failed";
+    if (WaitForSingleObject(hProcess, 0) == WAIT_OBJECT_0) {
+        outDetail = "Child exited before injection";
         return false;
     }
 
-    uintptr_t imageBase = 0;
-#if defined(_WIN64)
-    constexpr size_t kImageBaseOffset = 0x10;
-#else
-    constexpr size_t kImageBaseOffset = 0x08;
-#endif
-    SIZE_T bytesRead = 0;
-    if (!ReadProcessMemory(
-            hProcess,
-            reinterpret_cast<LPCVOID>(reinterpret_cast<uintptr_t>(pbi.PebBaseAddress) + kImageBaseOffset),
-            &imageBase,
-            sizeof(imageBase),
-            &bytesRead) ||
-        imageBase == 0) {
-        outDetail = fmtErr("ReadProcessMemory(PEB) failed", GetLastError());
+    auto pLoadLibraryW = GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW");
+    if (!pLoadLibraryW) {
+        outDetail = "LoadLibraryW missing";
         return false;
     }
 
-    IMAGE_DOS_HEADER dosHdr{};
-    if (!ReadProcessMemory(hProcess, reinterpret_cast<LPCVOID>(imageBase), &dosHdr, sizeof(dosHdr), &bytesRead) ||
-        dosHdr.e_magic != IMAGE_DOS_SIGNATURE) {
-        outDetail = "Invalid remote DOS header";
-        return false;
-    }
-
-    IMAGE_NT_HEADERS ntHdr{};
-    if (!ReadProcessMemory(
-            hProcess,
-            reinterpret_cast<LPCVOID>(imageBase + static_cast<uintptr_t>(dosHdr.e_lfanew)),
-            &ntHdr,
-            sizeof(ntHdr),
-            &bytesRead) ||
-        ntHdr.Signature != IMAGE_NT_SIGNATURE ||
-        ntHdr.OptionalHeader.AddressOfEntryPoint == 0) {
-        outDetail = "Invalid remote NT header";
-        return false;
-    }
-
-    uintptr_t oepAddr = imageBase + ntHdr.OptionalHeader.AddressOfEntryPoint;
-    uint8_t origBytes[2]{};
-    if (!ReadProcessMemory(hProcess, reinterpret_cast<LPCVOID>(oepAddr), origBytes, 2, &bytesRead)) {
-        outDetail = fmtErr("ReadProcessMemory(OEP) failed", GetLastError());
-        return false;
-    }
-
-    DWORD oldProt = 0;
-    if (!VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(oepAddr), 2, PAGE_EXECUTE_READWRITE, &oldProt)) {
-        outDetail = fmtErr("VirtualProtectEx(OEP) failed", GetLastError());
-        return false;
-    }
-
-    const uint8_t jmpSelf[2] = {0xEB, 0xFE};
-    SIZE_T bytesWritten = 0;
-    if (!WriteProcessMemory(hProcess, reinterpret_cast<LPVOID>(oepAddr), jmpSelf, 2, &bytesWritten)) {
-        DWORD err = GetLastError();
-        VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(oepAddr), 2, oldProt, &oldProt);
-        outDetail = fmtErr("WriteProcessMemory(OEP) failed", err);
-        return false;
-    }
-    FlushInstructionCache(hProcess, reinterpret_cast<LPCVOID>(oepAddr), 2);
-
-    // Let Windows loader complete LdrpInitializeProcess until main thread hits OEP
-    g_TrueResumeThread(hThread);
-
-    bool reachedOep = false;
-    bool exitedEarly = false;
-    for (int i = 0; i < 5000; ++i) {
-        if (WaitForSingleObject(hProcess, 0) == WAIT_OBJECT_0) {
-            exitedEarly = true;
-            break;
-        }
-        CONTEXT ctx{};
-        ctx.ContextFlags = CONTEXT_CONTROL;
-        if (GetThreadContext(hThread, &ctx)) {
-#if defined(_WIN64)
-            uintptr_t ip = static_cast<uintptr_t>(ctx.Rip);
-#else
-            uintptr_t ip = static_cast<uintptr_t>(ctx.Eip);
-#endif
-            if (ip == oepAddr) {
-                reachedOep = true;
-                break;
-            }
-        }
-        Sleep(1);
-    }
-
-    SuspendThread(hThread);
-    CONTEXT syncCtx{};
-    syncCtx.ContextFlags = CONTEXT_CONTROL;
-    GetThreadContext(hThread, &syncCtx);
-
-    // Restore original OEP bytes unconditionally
-    WriteProcessMemory(hProcess, reinterpret_cast<LPVOID>(oepAddr), origBytes, 2, &bytesWritten);
-    DWORD dummyProt = 0;
-    VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(oepAddr), 2, oldProt, &dummyProt);
-    FlushInstructionCache(hProcess, reinterpret_cast<LPCVOID>(oepAddr), 2);
-
-    if (!reachedOep) {
-        outDetail = exitedEarly ? "Child exited before OEP" : "Timed out waiting for OEP";
-        return false;
-    }
-
+    // Queue LoadLibraryW as a user-mode APC on the suspended child main thread.
+    // Avoids RWX VirtualProtectEx on .text (ACG-safe) and CreateRemoteThread
+    // entry validation (CFG export-suppression safe).
     size_t dllBytes = (dllPath.size() + 1) * sizeof(wchar_t);
     LPVOID remoteBuf = VirtualAllocEx(hProcess, nullptr, dllBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteBuf) {
@@ -311,33 +212,25 @@ bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring&
         return false;
     }
 
-    bool injected = false;
-    if (!WriteProcessMemory(hProcess, remoteBuf, dllPath.c_str(), dllBytes, &bytesWritten)) {
-        outDetail = fmtErr("WriteProcessMemory(DLL) failed", GetLastError());
-    } else {
-        auto pLoadLibraryW = reinterpret_cast<LPTHREAD_START_ROUTINE>(
-            GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
-        if (!pLoadLibraryW) {
-            outDetail = "LoadLibraryW missing";
-        } else {
-            HANDLE hRemote = CreateRemoteThread(hProcess, nullptr, 0, pLoadLibraryW, remoteBuf, 0, nullptr);
-            if (!hRemote) {
-                outDetail = fmtErr("CreateRemoteThread failed", GetLastError());
-            } else {
-                WaitForSingleObject(hRemote, 5000);
-                DWORD exitCode = 0;
-                GetExitCodeThread(hRemote, &exitCode);
-                CloseHandle(hRemote);
-                injected = (exitCode != 0);
-                if (!injected) {
-                    outDetail = "LoadLibraryW returned NULL in child";
-                }
-            }
-        }
+    SIZE_T bytesWritten = 0;
+    if (!WriteProcessMemory(hProcess, remoteBuf, dllPath.c_str(), dllBytes, &bytesWritten) || bytesWritten != dllBytes) {
+        DWORD err = GetLastError();
+        VirtualFreeEx(hProcess, remoteBuf, 0, MEM_RELEASE);
+        outDetail = fmtErr("WriteProcessMemory(DLL) failed", err);
+        return false;
     }
 
-    VirtualFreeEx(hProcess, remoteBuf, 0, MEM_RELEASE);
-    return injected;
+    if (QueueUserAPC(
+            reinterpret_cast<PAPCFUNC>(pLoadLibraryW),
+            hThread,
+            reinterpret_cast<ULONG_PTR>(remoteBuf)) == 0) {
+        DWORD err = GetLastError();
+        VirtualFreeEx(hProcess, remoteBuf, 0, MEM_RELEASE);
+        outDetail = fmtErr("QueueUserAPC(LoadLibraryW) failed", err);
+        return false;
+    }
+
+    return true;
 }
 
 bool InjectCrossBitnessViaHelper(DWORD pid, DWORD tid, bool childIs64) {
