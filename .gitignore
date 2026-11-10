@@ -1,0 +1,24 @@
+# Build outputs & temp files
+bin/
+obj/
+artifacts/
+packages/
+.vs/
+*.user
+*.suo
+*.db
+*.opendb
+*.VC.db
+*.VC.opendb
+x64/
+Win32/
+Debug/
+Release/
+
+# Downloaded third-party sources (auto-fetched by MSBuild)
+third_party/minhook/
+third_party/*.zip
+
+# Runtime user config
+config.json
+*.log

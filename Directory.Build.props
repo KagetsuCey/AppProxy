@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <AppProxyRoot>$(MSBuildThisFileDirectory)</AppProxyRoot>
+    <AppProxyArtifactsDir>$(AppProxyRoot)artifacts\</AppProxyArtifactsDir>
+  </PropertyGroup>
+</Project>

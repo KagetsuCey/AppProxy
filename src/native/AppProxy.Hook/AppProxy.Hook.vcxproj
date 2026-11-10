@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{6E3C7B10-4D2B-4E91-9A11-100000000001}</ProjectGuid>
+    <RootNamespace>AppProxyHook</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <AppProxyRoot>$(MSBuildThisFileDirectory)..\..\..\</AppProxyRoot>
+    <MinHookRoot>$(AppProxyRoot)third_party\minhook\minhook-1.3.3\</MinHookRoot>
+    <OutDir>$(AppProxyRoot)artifacts\bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(AppProxyRoot)artifacts\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName Condition="'$(Platform)'=='Win32'">AppProxy.Hook.x86</TargetName>
+    <TargetName Condition="'$(Platform)'=='x64'">AppProxy.Hook.x64</TargetName>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;APPPROXYHOOK_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\AppProxy.Common;$(MinHookRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
+      <Optimization Condition="'$(Configuration)'=='Release'">MaxSpeed</Optimization>
+      <FunctionLevelLinking Condition="'$(Configuration)'=='Release'">true</FunctionLevelLinking>
+      <IntrinsicFunctions Condition="'$(Configuration)'=='Release'">true</IntrinsicFunctions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding Condition="'$(Configuration)'=='Release'">true</EnableCOMDATFolding>
+      <OptimizeReferences Condition="'$(Configuration)'=='Release'">true</OptimizeReferences>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Automatically download MinHook v1.3.3 sources on first build if missing -->
+  <Target Name="EnsureMinHook" BeforeTargets="PrepareForBuild">
+    <MakeDir Directories="$(AppProxyRoot)third_party\minhook" Condition="!Exists('$(MinHookRoot)include\MinHook.h')" />
+    <DownloadFile
+      SourceUrl="https://github.com/TsudaKageyu/minhook/archive/refs/tags/v1.3.3.zip"
+      DestinationFolder="$(AppProxyRoot)third_party"
+      DestinationFileName="minhook-v1.3.3.zip"
+      Condition="!Exists('$(MinHookRoot)include\MinHook.h') and !Exists('$(AppProxyRoot)third_party\minhook-v1.3.3.zip')" />
+    <Unzip
+      SourceFiles="$(AppProxyRoot)third_party\minhook-v1.3.3.zip"
+      DestinationFolder="$(AppProxyRoot)third_party\minhook"
+      OverwriteReadOnlyFiles="true"
+      Condition="!Exists('$(MinHookRoot)include\MinHook.h')" />
+    <Error
+      Text="MinHook source files not found at $(MinHookRoot). Please download TsudaKageyu/minhook v1.3.3 into third_party\minhook\minhook-1.3.3\."
+      Condition="!Exists('$(MinHookRoot)include\MinHook.h')" />
+  </Target>
+
+  <ItemGroup>
+    <ClInclude Include="HookContext.h" />
+    <ClInclude Include="SharedBridgeClient.h" />
+    <ClInclude Include="..\AppProxy.Common\SharedLayout.h" />
+    <ClInclude Include="..\AppProxy.Common\LogProtocol.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="SharedBridgeClient.cpp" />
+    <ClCompile Include="HooksNetwork.cpp" />
+    <ClCompile Include="HooksDns.cpp" />
+    <ClCompile Include="HooksProcess.cpp" />
+    <ClCompile Include="$(MinHookRoot)src\buffer.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level1</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="$(MinHookRoot)src\hook.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level1</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="$(MinHookRoot)src\trampoline.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level1</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="$(MinHookRoot)src\hde\hde32.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Platform)'!='Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="$(MinHookRoot)src\hde\hde64.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <WarningLevel>Level1</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

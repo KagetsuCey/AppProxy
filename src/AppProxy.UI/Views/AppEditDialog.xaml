@@ -1,0 +1,90 @@
+<ui:FluentWindow x:Class="AppProxy.UI.Views.AppEditDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="配置应用"
+                 Width="540"
+                 Height="540"
+                 ResizeMode="NoResize"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="应用代理配置" ShowMaximize="False" ShowMinimize="False" />
+
+        <ScrollViewer Grid.Row="1" Padding="20,12,20,12" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="应用名称" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBox x:Name="NameBox" PlaceholderText="例如: Chrome / Git / Python" Margin="0,0,0,12" />
+
+                <TextBlock Text="可执行文件路径 (.exe)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="ExePathBox" Grid.Column="0" PlaceholderText="选择目标 .exe 文件..." Margin="0,0,8,0" />
+                    <ui:Button Grid.Column="1" Content="浏览..." Icon="{ui:SymbolIcon FolderOpen24}" Click="OnBrowseExe" />
+                </Grid>
+
+                <TextBlock Text="启动参数 (可选)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBox x:Name="ArgsBox" PlaceholderText="例如: --remote-debugging-port=9222" Margin="0,0,0,12" />
+
+                <TextBlock Text="工作目录 (留空则使用 EXE 所在目录)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBox x:Name="WorkDirBox" PlaceholderText="默认使用可执行文件目录" Margin="0,0,0,12" />
+
+                <TextBlock Text="绑定代理节点" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ComboBox x:Name="ProxyCombo" DisplayMemberPath="DisplayName" SelectedValuePath="Id" Margin="0,0,0,16" />
+
+                <Border CornerRadius="8"
+                        Padding="12"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="远程 DNS 解析 (Fake-IP)" FontWeight="SemiBold" />
+                                <TextBlock Text="拦截 getaddrinfo/GetAddrInfoExW 返回虚拟 IP，防止本地 DNS 泄漏"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="RemoteDnsToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="绕过局域网与回环地址" FontWeight="SemiBold" />
+                                <TextBlock Text="直连 127.0.0.0/8、192.168.0.0/16、10.0.0.0/8 等内网地址"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="BypassLanToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="自动注入子进程 (x86 / x64)" FontWeight="SemiBold" />
+                                <TextBlock Text="Hook CreateProcessW/A，自动代理派生出的所有子进程"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="InjectChildrenToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,12,20,16">
+            <ui:Button Content="取消" Appearance="Secondary" Click="OnCancel" Margin="0,0,10,0" Width="90" />
+            <ui:Button Content="保存" Appearance="Primary" Click="OnSave" Width="90" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>
