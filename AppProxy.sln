@@ -10,9 +10,14 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AppProxy.UI", "src\AppProxy
 	ProjectSection(ProjectDependencies) = postProject
 		{6E3C7B10-4D2B-4E91-9A11-100000000001} = {6E3C7B10-4D2B-4E91-9A11-100000000001}
 		{6E3C7B10-4D2B-4E91-9A11-100000000002} = {6E3C7B10-4D2B-4E91-9A11-100000000002}
+		{6E3C7B10-4D2B-4E91-9A11-100000000006} = {6E3C7B10-4D2B-4E91-9A11-100000000006}
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AppProxy.Tests", "tests\AppProxy.Tests\AppProxy.Tests.csproj", "{6E3C7B10-4D2B-4E91-9A11-100000000004}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AppProxy.Core", "src\AppProxy.Core\AppProxy.Core.csproj", "{6E3C7B10-4D2B-4E91-9A11-100000000005}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AppProxy.Bridge", "src\AppProxy.Bridge\AppProxy.Bridge.csproj", "{6E3C7B10-4D2B-4E91-9A11-100000000006}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -54,6 +59,22 @@ Global
 		{6E3C7B10-4D2B-4E91-9A11-100000000004}.Release|x64.Build.0 = Release|Any CPU
 		{6E3C7B10-4D2B-4E91-9A11-100000000004}.Release|x86.ActiveCfg = Release|Any CPU
 		{6E3C7B10-4D2B-4E91-9A11-100000000004}.Release|x86.Build.0 = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Debug|x64.Build.0 = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Debug|x86.Build.0 = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Release|x64.ActiveCfg = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Release|x64.Build.0 = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Release|x86.ActiveCfg = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000005}.Release|x86.Build.0 = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Debug|x64.Build.0 = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Debug|x86.Build.0 = Debug|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Release|x64.ActiveCfg = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Release|x64.Build.0 = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Release|x86.ActiveCfg = Release|Any CPU
+		{6E3C7B10-4D2B-4E91-9A11-100000000006}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

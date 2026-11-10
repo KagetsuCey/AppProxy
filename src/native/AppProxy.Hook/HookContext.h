@@ -73,6 +73,7 @@ inline uint64_t GetUnixTimeMs() {
 bool InstallNetworkHooks();
 bool InstallDnsHooks();
 bool InstallProcessHooks();
+void TryInstallLateHooks(bool enableImmediately);
 void CleanupProcessHooks();
 
 } // namespace AppProxy::Hook

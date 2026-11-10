@@ -2,6 +2,7 @@
 #include "SharedBridgeClient.h"
 #include <MinHook.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
@@ -18,11 +19,24 @@ using FnCreateProcessW = BOOL(WINAPI*)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, L
 using FnCreateProcessA = BOOL(WINAPI*)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
 using FnCreateProcessAsUserW = BOOL(WINAPI*)(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
 using FnResumeThread = DWORD(WINAPI*)(HANDLE);
+using FnLoadLibraryW = HMODULE(WINAPI*)(LPCWSTR);
+using FnLoadLibraryExW = HMODULE(WINAPI*)(LPCWSTR, HANDLE, DWORD);
+using FnLoadLibraryA = HMODULE(WINAPI*)(LPCSTR);
+using FnLoadLibraryExA = HMODULE(WINAPI*)(LPCSTR, HANDLE, DWORD);
 
 FnCreateProcessW g_TrueCreateProcessW = nullptr;
 FnCreateProcessA g_TrueCreateProcessA = nullptr;
 FnCreateProcessAsUserW g_TrueCreateProcessAsUserW = nullptr;
 FnResumeThread g_TrueResumeThread = nullptr;
+FnLoadLibraryW g_TrueLoadLibraryW = nullptr;
+FnLoadLibraryExW g_TrueLoadLibraryExW = nullptr;
+FnLoadLibraryA g_TrueLoadLibraryA = nullptr;
+FnLoadLibraryExA g_TrueLoadLibraryExA = nullptr;
+
+std::mutex g_lateHookMutex;
+std::atomic<bool> g_netHooksReady{false};
+std::atomic<bool> g_dnsHooksReady{false};
+std::atomic<bool> g_advapiHooksReady{false};
 
 struct PendingChildInfo {
     DWORD pid = 0;
@@ -39,6 +53,92 @@ struct NtProcessBasicInfo {
     LONG BasePriority;
     ULONG_PTR UniqueProcessId;
     ULONG_PTR InheritedFromUniqueProcessId;
+};
+
+struct RawProcThreadAttributeEntry {
+    DWORD_PTR Attribute;
+    SIZE_T cbSize;
+    PVOID lpValue;
+};
+
+struct RawProcThreadAttributeList {
+    DWORD dwFlags;
+    ULONG Size;
+    ULONG Count;
+    ULONG Reserved;
+    PULONG_PTR Unknown;
+    RawProcThreadAttributeEntry Entries[1];
+};
+
+bool IsMemoryWritable(const void* ptr, size_t bytes) {
+    if (!ptr || bytes == 0) return false;
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) == 0) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    DWORD prot = mbi.Protect & 0xFF;
+    return prot == PAGE_READWRITE ||
+           prot == PAGE_WRITECOPY ||
+           prot == PAGE_EXECUTE_READWRITE ||
+           prot == PAGE_EXECUTE_WRITECOPY;
+}
+
+class ScopedStripChildMitigationPolicy {
+public:
+    ScopedStripChildMitigationPolicy(DWORD creationFlags, const void* startupInfo) {
+        if ((creationFlags & EXTENDED_STARTUPINFO_PRESENT) == 0 || !startupInfo) {
+            return;
+        }
+        const auto* siEx = static_cast<const STARTUPINFOEXW*>(startupInfo);
+        if (siEx->StartupInfo.cb < sizeof(STARTUPINFOEXW) || !siEx->lpAttributeList) {
+            return;
+        }
+
+        const auto* attrList = reinterpret_cast<const RawProcThreadAttributeList*>(siEx->lpAttributeList);
+        if (attrList->Count == 0 || attrList->Count > attrList->Size || attrList->Count > 64) {
+            return;
+        }
+
+        for (ULONG i = 0; i < attrList->Count; ++i) {
+            const auto& entry = attrList->Entries[i];
+            if (entry.Attribute != PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY || !entry.lpValue) {
+                continue;
+            }
+            if (entry.cbSize >= sizeof(DWORD64) && IsMemoryWritable(entry.lpValue, sizeof(DWORD64))) {
+                auto* p0 = static_cast<DWORD64*>(entry.lpValue);
+                m_ptr0 = p0;
+                m_orig0 = *p0;
+                constexpr DWORD64 kStripMask0 =
+                    PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_MASK |
+                    PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_MASK |
+                    PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_MASK;
+                *p0 &= ~kStripMask0;
+            }
+            if (entry.cbSize >= 2 * sizeof(DWORD64) && IsMemoryWritable(entry.lpValue, 2 * sizeof(DWORD64))) {
+                auto* p1 = static_cast<DWORD64*>(entry.lpValue) + 1;
+                m_ptr1 = p1;
+                m_orig1 = *p1;
+                constexpr DWORD64 kStripMask1 =
+                    PROCESS_CREATION_MITIGATION_POLICY2_LOADER_INTEGRITY_CONTINUITY_MASK |
+                    PROCESS_CREATION_MITIGATION_POLICY2_MODULE_TAMPERING_PROTECTION_MASK;
+                *p1 &= ~kStripMask1;
+            }
+            break;
+        }
+    }
+
+    ~ScopedStripChildMitigationPolicy() {
+        if (m_ptr0) *m_ptr0 = m_orig0;
+        if (m_ptr1) *m_ptr1 = m_orig1;
+    }
+
+    ScopedStripChildMitigationPolicy(const ScopedStripChildMitigationPolicy&) = delete;
+    ScopedStripChildMitigationPolicy& operator=(const ScopedStripChildMitigationPolicy&) = delete;
+
+private:
+    DWORD64* m_ptr0 = nullptr;
+    DWORD64* m_ptr1 = nullptr;
+    DWORD64 m_orig0 = 0;
+    DWORD64 m_orig1 = 0;
 };
 
 using FnNtQueryInformationProcess = LONG(NTAPI*)(HANDLE, UINT, PVOID, ULONG, PULONG);
@@ -79,15 +179,25 @@ bool IsChildProcess64Bit(HANDLE hProcess) {
 #endif
 }
 
-bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring& dllPath) {
+bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring& dllPath, std::string& outDetail) {
+    auto fmtErr = [](const char* step, DWORD err) {
+        char buf[96]{};
+        std::snprintf(buf, sizeof(buf), "%s (err=%lu)", step, err);
+        return std::string(buf);
+    };
+
     static auto fnNtQueryInfo = reinterpret_cast<FnNtQueryInformationProcess>(
         GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess"));
-    if (!fnNtQueryInfo) return false;
+    if (!fnNtQueryInfo) {
+        outDetail = "NtQueryInformationProcess missing";
+        return false;
+    }
 
     NtProcessBasicInfo pbi{};
     ULONG retLen = 0;
     if (fnNtQueryInfo(hProcess, 0 /*ProcessBasicInformation*/, &pbi, sizeof(pbi), &retLen) != 0 ||
         !pbi.PebBaseAddress) {
+        outDetail = "NtQueryInformationProcess failed";
         return false;
     }
 
@@ -105,12 +215,14 @@ bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring&
             sizeof(imageBase),
             &bytesRead) ||
         imageBase == 0) {
+        outDetail = fmtErr("ReadProcessMemory(PEB) failed", GetLastError());
         return false;
     }
 
     IMAGE_DOS_HEADER dosHdr{};
     if (!ReadProcessMemory(hProcess, reinterpret_cast<LPCVOID>(imageBase), &dosHdr, sizeof(dosHdr), &bytesRead) ||
         dosHdr.e_magic != IMAGE_DOS_SIGNATURE) {
+        outDetail = "Invalid remote DOS header";
         return false;
     }
 
@@ -123,24 +235,29 @@ bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring&
             &bytesRead) ||
         ntHdr.Signature != IMAGE_NT_SIGNATURE ||
         ntHdr.OptionalHeader.AddressOfEntryPoint == 0) {
+        outDetail = "Invalid remote NT header";
         return false;
     }
 
     uintptr_t oepAddr = imageBase + ntHdr.OptionalHeader.AddressOfEntryPoint;
     uint8_t origBytes[2]{};
     if (!ReadProcessMemory(hProcess, reinterpret_cast<LPCVOID>(oepAddr), origBytes, 2, &bytesRead)) {
+        outDetail = fmtErr("ReadProcessMemory(OEP) failed", GetLastError());
         return false;
     }
 
     DWORD oldProt = 0;
     if (!VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(oepAddr), 2, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        outDetail = fmtErr("VirtualProtectEx(OEP) failed", GetLastError());
         return false;
     }
 
     const uint8_t jmpSelf[2] = {0xEB, 0xFE};
     SIZE_T bytesWritten = 0;
     if (!WriteProcessMemory(hProcess, reinterpret_cast<LPVOID>(oepAddr), jmpSelf, 2, &bytesWritten)) {
+        DWORD err = GetLastError();
         VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(oepAddr), 2, oldProt, &oldProt);
+        outDetail = fmtErr("WriteProcessMemory(OEP) failed", err);
         return false;
     }
     FlushInstructionCache(hProcess, reinterpret_cast<LPCVOID>(oepAddr), 2);
@@ -149,8 +266,10 @@ bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring&
     g_TrueResumeThread(hThread);
 
     bool reachedOep = false;
+    bool exitedEarly = false;
     for (int i = 0; i < 5000; ++i) {
         if (WaitForSingleObject(hProcess, 0) == WAIT_OBJECT_0) {
+            exitedEarly = true;
             break;
         }
         CONTEXT ctx{};
@@ -181,27 +300,38 @@ bool InjectSameBitnessAtOep(HANDLE hProcess, HANDLE hThread, const std::wstring&
     FlushInstructionCache(hProcess, reinterpret_cast<LPCVOID>(oepAddr), 2);
 
     if (!reachedOep) {
+        outDetail = exitedEarly ? "Child exited before OEP" : "Timed out waiting for OEP";
         return false;
     }
 
     size_t dllBytes = (dllPath.size() + 1) * sizeof(wchar_t);
     LPVOID remoteBuf = VirtualAllocEx(hProcess, nullptr, dllBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteBuf) {
+        outDetail = fmtErr("VirtualAllocEx failed", GetLastError());
         return false;
     }
 
     bool injected = false;
-    if (WriteProcessMemory(hProcess, remoteBuf, dllPath.c_str(), dllBytes, &bytesWritten)) {
+    if (!WriteProcessMemory(hProcess, remoteBuf, dllPath.c_str(), dllBytes, &bytesWritten)) {
+        outDetail = fmtErr("WriteProcessMemory(DLL) failed", GetLastError());
+    } else {
         auto pLoadLibraryW = reinterpret_cast<LPTHREAD_START_ROUTINE>(
             GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
-        if (pLoadLibraryW) {
+        if (!pLoadLibraryW) {
+            outDetail = "LoadLibraryW missing";
+        } else {
             HANDLE hRemote = CreateRemoteThread(hProcess, nullptr, 0, pLoadLibraryW, remoteBuf, 0, nullptr);
-            if (hRemote) {
+            if (!hRemote) {
+                outDetail = fmtErr("CreateRemoteThread failed", GetLastError());
+            } else {
                 WaitForSingleObject(hRemote, 5000);
                 DWORD exitCode = 0;
                 GetExitCodeThread(hRemote, &exitCode);
                 CloseHandle(hRemote);
                 injected = (exitCode != 0);
+                if (!injected) {
+                    outDetail = "LoadLibraryW returned NULL in child";
+                }
             }
         }
     }
@@ -219,7 +349,7 @@ bool InjectCrossBitnessViaHelper(DWORD pid, DWORD tid, bool childIs64) {
     wchar_t cmdLine[1024]{};
     swprintf_s(
         cmdLine,
-        L"\"%s\" --attach-suspended --pid %u --tid %u --dll \"%s\" --no-resume",
+        L"\"%s\" --attach-suspended --pid %lu --tid %lu --dll \"%s\" --no-resume",
         helperExe.c_str(),
         pid,
         tid,
@@ -260,22 +390,33 @@ bool InjectChildProcess(HANDLE hProcess, HANDLE hThread, DWORD pid, DWORD tid) {
 #endif
 
     bool ok = false;
+    std::string failDetail;
     if (childIs64 == selfIs64) {
         const wchar_t* archTag = childIs64 ? L"x64" : L"x86";
         std::wstring dllPath = g_config.selfDir + L"\\AppProxy.Hook." + archTag + L".dll";
-        ok = InjectSameBitnessAtOep(hProcess, hThread, dllPath);
+        ok = InjectSameBitnessAtOep(hProcess, hThread, dllPath, failDetail);
     } else {
         ok = InjectCrossBitnessViaHelper(pid, tid, childIs64);
+        if (!ok) failDetail = "Cross-bitness helper failed";
     }
 
-    char msg[128]{};
-    std::snprintf(
-        msg,
-        sizeof(msg),
-        "Child PID %u (%s) injection %s",
-        pid,
-        childIs64 ? "x64" : "x86",
-        ok ? "succeeded" : "failed");
+    char msg[256]{};
+    if (ok) {
+        std::snprintf(
+            msg,
+            sizeof(msg),
+            "Child PID %lu (%s) injection succeeded",
+            pid,
+            childIs64 ? "x64" : "x86");
+    } else {
+        std::snprintf(
+            msg,
+            sizeof(msg),
+            "Child PID %lu (%s) injection failed: %s",
+            pid,
+            childIs64 ? "x64" : "x86",
+            failDetail.c_str());
+    }
     SharedBridgeClient::EmitLogEvent("ChildSpawned", msg);
     return ok;
 }
@@ -361,7 +502,7 @@ BOOL WINAPI HookedCreateProcessW(
     }
 
     bool callerSuspended = (dwCreationFlags & CREATE_SUSPENDED) != 0;
-    DWORD patchedFlags = dwCreationFlags | CREATE_SUSPENDED;
+    DWORD patchedFlags = (dwCreationFlags | CREATE_SUSPENDED) & ~CREATE_BREAKAWAY_FROM_JOB;
 
     std::vector<wchar_t> clonedEnv;
     LPVOID effectiveEnv = lpEnvironment;
@@ -371,17 +512,21 @@ BOOL WINAPI HookedCreateProcessW(
         patchedFlags |= CREATE_UNICODE_ENVIRONMENT;
     }
 
-    BOOL ok = g_TrueCreateProcessW(
-        lpApplicationName,
-        lpCommandLine,
-        lpProcessAttributes,
-        lpThreadAttributes,
-        bInheritHandles,
-        patchedFlags,
-        effectiveEnv,
-        lpCurrentDirectory,
-        lpStartupInfo,
-        lpProcessInformation);
+    BOOL ok = FALSE;
+    {
+        ScopedStripChildMitigationPolicy stripMitigation(patchedFlags, lpStartupInfo);
+        ok = g_TrueCreateProcessW(
+            lpApplicationName,
+            lpCommandLine,
+            lpProcessAttributes,
+            lpThreadAttributes,
+            bInheritHandles,
+            patchedFlags,
+            effectiveEnv,
+            lpCurrentDirectory,
+            lpStartupInfo,
+            lpProcessInformation);
+    }
 
     if (ok) {
         if (callerSuspended) {
@@ -428,7 +573,7 @@ BOOL WINAPI HookedCreateProcessA(
     }
 
     bool callerSuspended = (dwCreationFlags & CREATE_SUSPENDED) != 0;
-    DWORD patchedFlags = dwCreationFlags | CREATE_SUSPENDED;
+    DWORD patchedFlags = (dwCreationFlags | CREATE_SUSPENDED) & ~CREATE_BREAKAWAY_FROM_JOB;
 
     std::vector<wchar_t> clonedEnv;
     LPVOID effectiveEnv = lpEnvironment;
@@ -438,17 +583,21 @@ BOOL WINAPI HookedCreateProcessA(
         patchedFlags |= CREATE_UNICODE_ENVIRONMENT;
     }
 
-    BOOL ok = g_TrueCreateProcessA(
-        lpApplicationName,
-        lpCommandLine,
-        lpProcessAttributes,
-        lpThreadAttributes,
-        bInheritHandles,
-        patchedFlags,
-        effectiveEnv,
-        lpCurrentDirectory,
-        lpStartupInfo,
-        lpProcessInformation);
+    BOOL ok = FALSE;
+    {
+        ScopedStripChildMitigationPolicy stripMitigation(patchedFlags, lpStartupInfo);
+        ok = g_TrueCreateProcessA(
+            lpApplicationName,
+            lpCommandLine,
+            lpProcessAttributes,
+            lpThreadAttributes,
+            bInheritHandles,
+            patchedFlags,
+            effectiveEnv,
+            lpCurrentDirectory,
+            lpStartupInfo,
+            lpProcessInformation);
+    }
 
     if (ok) {
         if (callerSuspended) {
@@ -497,7 +646,7 @@ BOOL WINAPI HookedCreateProcessAsUserW(
     }
 
     bool callerSuspended = (dwCreationFlags & CREATE_SUSPENDED) != 0;
-    DWORD patchedFlags = dwCreationFlags | CREATE_SUSPENDED;
+    DWORD patchedFlags = (dwCreationFlags | CREATE_SUSPENDED) & ~CREATE_BREAKAWAY_FROM_JOB;
 
     std::vector<wchar_t> clonedEnv;
     LPVOID effectiveEnv = lpEnvironment;
@@ -507,18 +656,22 @@ BOOL WINAPI HookedCreateProcessAsUserW(
         patchedFlags |= CREATE_UNICODE_ENVIRONMENT;
     }
 
-    BOOL ok = g_TrueCreateProcessAsUserW(
-        hToken,
-        lpApplicationName,
-        lpCommandLine,
-        lpProcessAttributes,
-        lpThreadAttributes,
-        bInheritHandles,
-        patchedFlags,
-        effectiveEnv,
-        lpCurrentDirectory,
-        lpStartupInfo,
-        lpProcessInformation);
+    BOOL ok = FALSE;
+    {
+        ScopedStripChildMitigationPolicy stripMitigation(patchedFlags, lpStartupInfo);
+        ok = g_TrueCreateProcessAsUserW(
+            hToken,
+            lpApplicationName,
+            lpCommandLine,
+            lpProcessAttributes,
+            lpThreadAttributes,
+            bInheritHandles,
+            patchedFlags,
+            effectiveEnv,
+            lpCurrentDirectory,
+            lpStartupInfo,
+            lpProcessInformation);
+    }
 
     if (ok) {
         if (callerSuspended) {
@@ -566,16 +719,120 @@ DWORD WINAPI HookedResumeThread(HANDLE hThread) {
     return g_TrueResumeThread(hThread);
 }
 
+HMODULE WINAPI HookedLoadLibraryW(LPCWSTR lpLibFileName) {
+    HMODULE mod = g_TrueLoadLibraryW(lpLibFileName);
+    if (mod) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
+HMODULE WINAPI HookedLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
+    HMODULE mod = g_TrueLoadLibraryExW(lpLibFileName, hFile, dwFlags);
+    constexpr DWORD kDataOnlyFlags =
+        LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE;
+    if (mod && (dwFlags & kDataOnlyFlags) == 0) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
+HMODULE WINAPI HookedLoadLibraryA(LPCSTR lpLibFileName) {
+    HMODULE mod = g_TrueLoadLibraryA(lpLibFileName);
+    if (mod) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
+HMODULE WINAPI HookedLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
+    HMODULE mod = g_TrueLoadLibraryExA(lpLibFileName, hFile, dwFlags);
+    constexpr DWORD kDataOnlyFlags =
+        LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE;
+    if (mod && (dwFlags & kDataOnlyFlags) == 0) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
 } // namespace
 
 bool InstallProcessHooks() {
     MH_CreateHookApi(L"kernel32", "CreateProcessW", &HookedCreateProcessW, reinterpret_cast<LPVOID*>(&g_TrueCreateProcessW));
     MH_CreateHookApi(L"kernel32", "CreateProcessA", &HookedCreateProcessA, reinterpret_cast<LPVOID*>(&g_TrueCreateProcessA));
     MH_CreateHookApi(L"kernel32", "ResumeThread", &HookedResumeThread, reinterpret_cast<LPVOID*>(&g_TrueResumeThread));
-    if (GetModuleHandleW(L"advapi32.dll")) {
-        MH_CreateHookApi(L"advapi32", "CreateProcessAsUserW", &HookedCreateProcessAsUserW, reinterpret_cast<LPVOID*>(&g_TrueCreateProcessAsUserW));
+    MH_CreateHookApi(L"kernel32", "LoadLibraryW", &HookedLoadLibraryW, reinterpret_cast<LPVOID*>(&g_TrueLoadLibraryW));
+    MH_CreateHookApi(L"kernel32", "LoadLibraryExW", &HookedLoadLibraryExW, reinterpret_cast<LPVOID*>(&g_TrueLoadLibraryExW));
+    MH_CreateHookApi(L"kernel32", "LoadLibraryA", &HookedLoadLibraryA, reinterpret_cast<LPVOID*>(&g_TrueLoadLibraryA));
+    MH_CreateHookApi(L"kernel32", "LoadLibraryExA", &HookedLoadLibraryExA, reinterpret_cast<LPVOID*>(&g_TrueLoadLibraryExA));
+
+    HMODULE hKernelBase = GetModuleHandleW(L"kernelbase.dll");
+    if (hKernelBase && GetProcAddress(hKernelBase, "CreateProcessAsUserW") != nullptr) {
+        if (MH_CreateHookApi(
+                L"kernelbase",
+                "CreateProcessAsUserW",
+                &HookedCreateProcessAsUserW,
+                reinterpret_cast<LPVOID*>(&g_TrueCreateProcessAsUserW)) == MH_OK) {
+            g_advapiHooksReady.store(true, std::memory_order_release);
+        }
     }
     return true;
+}
+
+void TryInstallLateHooks(bool enableImmediately) {
+    if (g_shuttingDown.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    bool needWs2 = !g_netHooksReady.load(std::memory_order_acquire) ||
+                   !g_dnsHooksReady.load(std::memory_order_acquire);
+    bool needAdvapi = !g_advapiHooksReady.load(std::memory_order_acquire);
+    if (!needWs2 && !needAdvapi) {
+        return;
+    }
+
+    bool ws2Loaded = needWs2 && (GetModuleHandleW(L"ws2_32.dll") != nullptr);
+    bool advapiLoaded = needAdvapi && (GetModuleHandleW(L"advapi32.dll") != nullptr);
+    if (!ws2Loaded && !advapiLoaded) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_lateHookMutex);
+    if (g_shuttingDown.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    bool needEnable = false;
+
+    if (!g_netHooksReady.load(std::memory_order_relaxed) && GetModuleHandleW(L"ws2_32.dll")) {
+        if (InstallNetworkHooks()) {
+            needEnable = true;
+        }
+        g_netHooksReady.store(true, std::memory_order_release);
+    }
+
+    if (!g_dnsHooksReady.load(std::memory_order_relaxed) && GetModuleHandleW(L"ws2_32.dll")) {
+        if (InstallDnsHooks()) {
+            needEnable = true;
+        }
+        g_dnsHooksReady.store(true, std::memory_order_release);
+    }
+
+    if (!g_advapiHooksReady.load(std::memory_order_relaxed) && GetModuleHandleW(L"advapi32.dll")) {
+        MH_STATUS st = MH_CreateHookApi(
+            L"advapi32",
+            "CreateProcessAsUserW",
+            &HookedCreateProcessAsUserW,
+            reinterpret_cast<LPVOID*>(&g_TrueCreateProcessAsUserW));
+        if (st == MH_OK) {
+            needEnable = true;
+        }
+        g_advapiHooksReady.store(true, std::memory_order_release);
+    }
+
+    if (enableImmediately && needEnable) {
+        MH_EnableHook(MH_ALL_HOOKS);
+    }
 }
 
 void CleanupProcessHooks() {

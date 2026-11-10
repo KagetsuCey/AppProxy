@@ -35,13 +35,13 @@ public partial class ProxyEditDialog : FluentWindow
         string host = HostBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(host))
         {
-            System.Windows.MessageBox.Show(this, "请输入代理服务器地址。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show(this, "请输入代理服务器地址。", "提示", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         if (!int.TryParse(PortBox.Text.Trim(), out int port) || port < 1 || port > 65535)
         {
-            System.Windows.MessageBox.Show(this, "请输入有效的端口号 (1 - 65535)。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show(this, "请输入有效的端口号 (1 - 65535)。", "提示", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 

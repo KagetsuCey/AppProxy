@@ -84,9 +84,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ulReasonForCall, LPVOID lpReserved)
         InitializeRuntimeConfig(hModule);
 
         if (MH_Initialize() == MH_OK) {
-            InstallNetworkHooks();
-            InstallDnsHooks();
             InstallProcessHooks();
+            TryInstallLateHooks(false);
             MH_EnableHook(MH_ALL_HOOKS);
 
             if (g_config.bridgePid != 0) {

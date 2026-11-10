@@ -95,6 +95,30 @@ bool IsFakeIpTarget(const sockaddr* name, int namelen) {
     return false;
 }
 
+bool ShouldBlockUdpTarget(const sockaddr* name, int namelen) {
+    if (!name) return false;
+    if (IsFakeIpTarget(name, namelen)) return true;
+
+    uint32_t flags = SharedBridgeClient::GetEffectiveFlags();
+    if ((flags & IPC::FLAG_DIRECT_MODE) == 0 && (flags & IPC::FLAG_REMOTE_DNS) != 0) {
+        if (name->sa_family == AF_INET && namelen >= static_cast<int>(sizeof(sockaddr_in))) {
+            const auto* sa4 = reinterpret_cast<const sockaddr_in*>(name);
+            if (ntohs(sa4->sin_port) == 53) return true;
+        } else if (name->sa_family == AF_INET6 && namelen >= static_cast<int>(sizeof(sockaddr_in6))) {
+            const auto* sa6 = reinterpret_cast<const sockaddr_in6*>(name);
+            if (ntohs(sa6->sin6_port) == 53) return true;
+        }
+    }
+    return false;
+}
+
+bool IsUdpSocket(SOCKET s) {
+    int sockType = 0;
+    int optLen = sizeof(sockType);
+    return getsockopt(s, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&sockType), &optLen) == 0 &&
+           sockType == SOCK_DGRAM;
+}
+
 bool ShouldBypassTarget(const sockaddr* name, int namelen, uint32_t flags) {
     if (!name) return true;
     if (flags & IPC::FLAG_DIRECT_MODE) return true;
@@ -277,6 +301,10 @@ bool TryPrepareRedirect(
 }
 
 int WSAAPI HookedConnect(SOCKET s, const struct sockaddr* name, int namelen) {
+    if (IsUdpSocket(s) && ShouldBlockUdpTarget(name, namelen)) {
+        WSASetLastError(WSAECONNREFUSED);
+        return SOCKET_ERROR;
+    }
     sockaddr_storage bridgeAddr{};
     int bridgeLen = 0;
     if (TryPrepareRedirect(s, name, namelen, bridgeAddr, bridgeLen)) {
@@ -293,6 +321,10 @@ int WSAAPI HookedWSAConnect(
     LPWSABUF lpCalleeData,
     LPQOS lpSQOS,
     LPQOS lpGQOS) {
+    if (IsUdpSocket(s) && ShouldBlockUdpTarget(name, namelen)) {
+        WSASetLastError(WSAECONNREFUSED);
+        return SOCKET_ERROR;
+    }
     sockaddr_storage bridgeAddr{};
     int bridgeLen = 0;
     if (TryPrepareRedirect(s, name, namelen, bridgeAddr, bridgeLen)) {
@@ -471,8 +503,8 @@ int WSAAPI HookedSendTo(
     int flags,
     const struct sockaddr* to,
     int tolen) {
-    if (IsFakeIpTarget(to, tolen)) {
-        // Fast-fail QUIC/UDP packets directed to Fake-IPs so HTTP/3 falls back to TCP immediately
+    if (ShouldBlockUdpTarget(to, tolen)) {
+        // Fast-fail QUIC/UDP packets to Fake-IPs and UDP port 53 when RemoteDns is enabled
         WSASetLastError(WSAECONNREFUSED);
         return SOCKET_ERROR;
     }
@@ -489,7 +521,7 @@ int WSAAPI HookedWSASendTo(
     int iTolen,
     LPWSAOVERLAPPED lpOverlapped,
     LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
-    if (IsFakeIpTarget(lpTo, iTolen)) {
+    if (ShouldBlockUdpTarget(lpTo, iTolen)) {
         WSASetLastError(WSAECONNREFUSED);
         return SOCKET_ERROR;
     }
@@ -508,6 +540,10 @@ int WSAAPI HookedWSASendTo(
 } // namespace
 
 bool InstallNetworkHooks() {
+    static bool s_installed = false;
+    if (s_installed) return true;
+    if (!GetModuleHandleW(L"ws2_32.dll")) return false;
+
     MH_CreateHookApi(L"ws2_32", "connect", &HookedConnect, reinterpret_cast<LPVOID*>(&g_TrueConnect));
     MH_CreateHookApi(L"ws2_32", "WSAConnect", &HookedWSAConnect, reinterpret_cast<LPVOID*>(&g_TrueWSAConnect));
     MH_CreateHookApi(L"ws2_32", "WSAConnectByNameW", &HookedWSAConnectByNameW, reinterpret_cast<LPVOID*>(&g_TrueWSAConnectByNameW));
@@ -517,6 +553,7 @@ bool InstallNetworkHooks() {
     MH_CreateHookApi(L"ws2_32", "closesocket", &HookedCloseSocket, reinterpret_cast<LPVOID*>(&g_TrueCloseSocket));
     MH_CreateHookApi(L"ws2_32", "sendto", &HookedSendTo, reinterpret_cast<LPVOID*>(&g_TrueSendTo));
     MH_CreateHookApi(L"ws2_32", "WSASendTo", &HookedWSASendTo, reinterpret_cast<LPVOID*>(&g_TrueWSASendTo));
+    s_installed = true;
     return true;
 }
 

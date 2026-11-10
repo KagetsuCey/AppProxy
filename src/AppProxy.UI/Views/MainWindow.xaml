@@ -551,11 +551,30 @@
                             </StackPanel>
                         </Border>
 
+                        <Border CornerRadius="8"
+                                Padding="16"
+                                Margin="0,0,0,12"
+                                BorderThickness="1"
+                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel>
+                                <TextBlock Text="配置文件位置" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="所有代理节点、应用配置与界面设置均保存在程序同级目录的 config.json 中"
+                                           FontSize="12"
+                                           Margin="0,2,0,6"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{Binding ConfigFilePath}"
+                                           FontSize="12"
+                                           FontFamily="Consolas"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
                         <ui:InfoBar Title="工作原理说明"
                                     IsOpen="True"
                                     IsClosable="False"
                                     Severity="Informational"
-                                    Message="AppProxy 在创建目标进程时挂起主线程并在 OEP 注入 x86/x64 Hook DLL，拦截 Winsock (connect/WSAConnect/ConnectEx)、DNS (getaddrinfo/GetAddrInfoExW Fake-IP) 与 CreateProcess 子进程继承，并将流量透明转发至本机回环异步代理桥接器。" />
+                                    Message="AppProxy 为每个启动的应用分配独立后台桥接进程（AppProxy.Bridge.exe），挂起目标主线程并在 OEP 注入 x86/x64 Hook DLL，拦截 Winsock、Fake-IP DNS 与子进程继承；关闭 UI 窗口不影响已启动的代理应用，目标应用进程树全部退出后对应后台桥接进程自动释放。" />
                     </StackPanel>
                 </Grid>
 

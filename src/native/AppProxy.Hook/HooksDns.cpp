@@ -2,6 +2,7 @@
 #include "SharedBridgeClient.h"
 #include <MinHook.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
@@ -15,7 +16,7 @@ namespace {
 
 using FnGetAddrInfo = int(WSAAPI*)(PCSTR, PCSTR, const ADDRINFOA*, PADDRINFOA*);
 using FnGetAddrInfoW = int(WSAAPI*)(PCWSTR, PCWSTR, const ADDRINFOW*, PADDRINFOW*);
-using FnGetAddrInfoExW = int(WSAAPI*)(PCWSTR, PCWSTR, DWORD, LPGUID, const ADDRINFOEXW*, PADDRINFOEXW*, struct timeval*, LPOVERLAPPED, LPLOOKUPSVC_COMPLETION_ROUTINE, LPHANDLE);
+using FnGetAddrInfoExW = int(WSAAPI*)(PCWSTR, PCWSTR, DWORD, LPGUID, const ADDRINFOEXW*, PADDRINFOEXW*, struct timeval*, LPOVERLAPPED, LPLOOKUPSERVICE_COMPLETION_ROUTINE, LPHANDLE);
 using FnFreeAddrInfo = void(WSAAPI*)(PADDRINFOA);
 using FnFreeAddrInfoW = void(WSAAPI*)(PADDRINFOW);
 using FnFreeAddrInfoExW = void(WSAAPI*)(PADDRINFOEXW);
@@ -279,7 +280,7 @@ int WSAAPI HookedGetAddrInfoExW(
     PADDRINFOEXW* ppResult,
     struct timeval* timeout,
     LPOVERLAPPED lpOverlapped,
-    LPLOOKUPSVC_COMPLETION_ROUTINE lpCompletionRoutine,
+    LPLOOKUPSERVICE_COMPLETION_ROUTINE lpCompletionRoutine,
     LPHANDLE lpHandle) {
     if (!ppResult) return WSAEINVAL;
 
@@ -375,8 +376,9 @@ struct hostent* WSAAPI HookedGetHostByName(const char* name) {
             thread_local char* tlAddrList[2]{};
             thread_local char* tlAliases[1]{nullptr};
 
-            std::strncpy(tlName, name, sizeof(tlName) - 1);
-            tlName[sizeof(tlName) - 1] = '\0';
+            size_t copyLen = (std::min)(std::strlen(name), sizeof(tlName) - 1);
+            std::memcpy(tlName, name, copyLen);
+            tlName[copyLen] = '\0';
             tlAddr.s_addr = htonl(fakeIp);
             tlAddrList[0] = reinterpret_cast<char*>(&tlAddr);
             tlAddrList[1] = nullptr;
@@ -395,6 +397,10 @@ struct hostent* WSAAPI HookedGetHostByName(const char* name) {
 } // namespace
 
 bool InstallDnsHooks() {
+    static bool s_installed = false;
+    if (s_installed) return true;
+    if (!GetModuleHandleW(L"ws2_32.dll")) return false;
+
     MH_CreateHookApi(L"ws2_32", "getaddrinfo", &HookedGetAddrInfo, reinterpret_cast<LPVOID*>(&g_TrueGetAddrInfo));
     MH_CreateHookApi(L"ws2_32", "freeaddrinfo", &HookedFreeAddrInfo, reinterpret_cast<LPVOID*>(&g_TrueFreeAddrInfo));
     MH_CreateHookApi(L"ws2_32", "GetAddrInfoW", &HookedGetAddrInfoW, reinterpret_cast<LPVOID*>(&g_TrueGetAddrInfoW));
@@ -402,6 +408,7 @@ bool InstallDnsHooks() {
     MH_CreateHookApi(L"ws2_32", "GetAddrInfoExW", &HookedGetAddrInfoExW, reinterpret_cast<LPVOID*>(&g_TrueGetAddrInfoExW));
     MH_CreateHookApi(L"ws2_32", "FreeAddrInfoExW", &HookedFreeAddrInfoExW, reinterpret_cast<LPVOID*>(&g_TrueFreeAddrInfoExW));
     MH_CreateHookApi(L"ws2_32", "gethostbyname", &HookedGetHostByName, reinterpret_cast<LPVOID*>(&g_TrueGetHostByName));
+    s_installed = true;
     return true;
 }
 

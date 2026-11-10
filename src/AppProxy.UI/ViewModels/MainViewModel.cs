@@ -16,13 +16,13 @@ namespace AppProxy.UI.ViewModels;
 public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _configService;
-    private readonly SharedMemoryService _shm;
-    private readonly LocalProxyBridge _bridge;
     private readonly AppLauncherService _launcher;
     private readonly DispatcherTimer _uiFlushTimer;
-    private readonly ConcurrentQueue<ConnectionRecord> _pendingConnections = new();
+    private readonly ConcurrentQueue<BridgeConnectionDto> _pendingConnectionUpserts = new();
     private readonly ConcurrentQueue<ProcessEventRecord> _pendingEvents = new();
+    private readonly Dictionary<(uint BridgePid, long Id), ConnectionRecord> _connectionIndex = new();
     private AppConfig _config;
+    private bool _isInitializing = true;
 
     public ObservableCollection<ProxyProfile> Proxies { get; } = new();
     public ObservableCollection<AppProfile> Apps { get; } = new();
@@ -31,6 +31,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public ICollectionView FilteredApps { get; }
     public ICollectionView FilteredConnections { get; }
+
+    public string ConfigFilePath => _configService.ConfigPath;
 
     [ObservableProperty]
     private int _selectedNavIndex;
@@ -45,7 +47,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _connectionSearchText = string.Empty;
 
     [ObservableProperty]
-    private string _bridgeStatusText = string.Empty;
+    private string _bridgeStatusText = "独立后台桥接就绪 (按需随应用启动)";
 
     [ObservableProperty]
     private int _activeConnectionsCount;
@@ -67,12 +69,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _configService = new ConfigService();
         _config = _configService.Load();
 
-        _shm = new SharedMemoryService();
-        _bridge = new LocalProxyBridge(_shm);
-        _launcher = new AppLauncherService(_shm, _bridge);
-
-        _bridge.ConnectionCreated += rec => _pendingConnections.Enqueue(rec);
+        _launcher = new AppLauncherService();
+        _launcher.ConnectionUpserted += dto => _pendingConnectionUpserts.Enqueue(dto);
         _launcher.ProcessEventReceived += ev => _pendingEvents.Enqueue(ev);
+        _launcher.BridgeStatusUpdated += _ => RefreshBridgeSummary();
+        _launcher.BridgeDisconnected += bridgePid =>
+        {
+            RefreshBridgeSummary();
+            MarkBridgeConnectionsClosed(bridgePid);
+        };
 
         IsDarkTheme = _config.IsDarkTheme;
         TestProbeHost = string.IsNullOrWhiteSpace(_config.TestProbeHost) ? "www.gstatic.com" : _config.TestProbeHost;
@@ -95,9 +100,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FilteredConnections = CollectionViewSource.GetDefaultView(Connections);
         FilteredConnections.Filter = FilterConnectionPredicate;
 
-        BridgeStatusText = _bridge.PortV6 != 0
-            ? $"Bridge 127.0.0.1:{_bridge.PortV4} | [::1]:{_bridge.PortV6}"
-            : $"Bridge 127.0.0.1:{_bridge.PortV4}";
+        RefreshBridgeSummary();
 
         _uiFlushTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -105,6 +108,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         };
         _uiFlushTimer.Tick += OnFlushTimerTick;
         _uiFlushTimer.Start();
+        _isInitializing = false;
     }
 
     partial void OnAppSearchTextChanged(string value) => FilteredApps.Refresh();
@@ -112,8 +116,50 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnIsDarkThemeChanged(bool value)
     {
-        ApplicationThemeManager.Apply(value ? ApplicationTheme.Dark : ApplicationTheme.Light);
-        SaveConfiguration();
+        if (Application.Current is not null)
+        {
+            ApplicationThemeManager.Apply(value ? ApplicationTheme.Dark : ApplicationTheme.Light);
+        }
+        if (!_isInitializing)
+        {
+            SaveConfiguration();
+        }
+    }
+
+    private void RefreshBridgeSummary()
+    {
+        var bridges = _launcher.ActiveBridges;
+        int totalActive = bridges.Sum(b => b.ActiveConnections);
+        ActiveConnectionsCount = totalActive;
+
+        if (bridges.Count == 0)
+        {
+            BridgeStatusText = "独立后台桥接就绪 (按需随应用启动)";
+        }
+        else if (bridges.Count == 1)
+        {
+            var b = bridges.First();
+            string endpoint = b.PortV6 != 0
+                ? $"127.0.0.1:{b.PortV4} | [::1]:{b.PortV6}"
+                : $"127.0.0.1:{b.PortV4}";
+            BridgeStatusText = $"后台桥接 #{b.BridgePid} ({b.AppName}) · {endpoint}";
+        }
+        else
+        {
+            BridgeStatusText = $"后台桥接运行中: {bridges.Count} 个独立实例";
+        }
+    }
+
+    private void MarkBridgeConnectionsClosed(uint bridgePid)
+    {
+        foreach (var kv in _connectionIndex)
+        {
+            if (kv.Key.BridgePid == bridgePid &&
+                (kv.Value.RawStatus == "Connecting" || kv.Value.RawStatus == "Active"))
+            {
+                kv.Value.UpdateState("Closed");
+            }
+        }
     }
 
     private bool FilterAppPredicate(object obj)
@@ -136,14 +182,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private void OnFlushTimerTick(object? sender, EventArgs e)
     {
-        int connAdded = 0;
-        while (connAdded < 64 && _pendingConnections.TryDequeue(out var conn))
+        int connProcessed = 0;
+        while (connProcessed < 128 && _pendingConnectionUpserts.TryDequeue(out var dto))
         {
-            Connections.Insert(0, conn);
-            connAdded++;
+            var key = (dto.BridgePid, dto.Id);
+            if (_connectionIndex.TryGetValue(key, out var existing))
+            {
+                existing.ApplySnapshot(dto.Status, dto.LatencyMs, dto.BytesUp, dto.BytesDown, dto.ErrorMessage);
+                existing.SyncToUi();
+            }
+            else
+            {
+                var rec = dto.ToRecord();
+                rec.SyncToUi();
+                _connectionIndex[key] = rec;
+                Connections.Insert(0, rec);
+            }
+            connProcessed++;
         }
+
         while (Connections.Count > 2000)
         {
+            var last = Connections[^1];
+            _connectionIndex.Remove((last.BridgePid, last.Id));
             Connections.RemoveAt(Connections.Count - 1);
         }
 
@@ -163,7 +224,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             conn.SyncToUi();
         }
 
-        ActiveConnectionsCount = _bridge.ActiveConnections;
+        RefreshBridgeSummary();
     }
 
     public void HydrateAppMetadata(AppProfile app)
@@ -244,7 +305,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ? Proxies.FirstOrDefault(p => p.Id == app.ProxyProfileId)
             : null;
 
-        StatusMessage = $"Injecting and launching {app.Name}...";
+        StatusMessage = $"Launching standalone bridge and injecting {app.Name}...";
         var (ok, _, msg) = await _launcher.LaunchAppAsync(app, proxy);
         StatusMessage = msg;
         if (!ok)
@@ -307,6 +368,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ClearConnections()
     {
+        _connectionIndex.Clear();
         Connections.Clear();
     }
 
@@ -331,7 +393,5 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _uiFlushTimer.Stop();
         _launcher.Dispose();
-        _bridge.Dispose();
-        _shm.Dispose();
     }
 }

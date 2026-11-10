@@ -1,70 +1,30 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using AppProxy.UI.Interop;
 using AppProxy.UI.Models;
 
 namespace AppProxy.UI.Services;
 
 public sealed class AppLauncherService : IDisposable
 {
-    private readonly SharedMemoryService _shm;
-    private readonly LocalProxyBridge _bridge;
     private readonly CancellationTokenSource _cts = new();
-    private uint _nextSessionId = 1;
+    private readonly ConcurrentDictionary<uint, BridgeStatusDto> _activeBridges = new();
+    private readonly ConcurrentDictionary<uint, byte> _attachedPipes = new();
     private bool _disposed;
 
     public event Action<ProcessEventRecord>? ProcessEventReceived;
+    public event Action<BridgeConnectionDto>? ConnectionUpserted;
+    public event Action<BridgeStatusDto>? BridgeStatusUpdated;
+    public event Action<uint>? BridgeDisconnected;
 
-    private sealed class InjectorOutput
+    public IReadOnlyCollection<BridgeStatusDto> ActiveBridges => _activeBridges.Values.ToArray();
+
+    public AppLauncherService()
     {
-        [JsonPropertyName("ok")]
-        public bool Ok { get; set; }
-
-        [JsonPropertyName("pid")]
-        public uint Pid { get; set; }
-
-        [JsonPropertyName("arch")]
-        public string? Arch { get; set; }
-
-        [JsonPropertyName("error")]
-        public string? Error { get; set; }
-    }
-
-    private sealed class PipeLogPayload
-    {
-        [JsonPropertyName("ts")]
-        public long Ts { get; set; }
-
-        [JsonPropertyName("sessionId")]
-        public uint SessionId { get; set; }
-
-        [JsonPropertyName("pid")]
-        public uint Pid { get; set; }
-
-        [JsonPropertyName("parentPid")]
-        public uint ParentPid { get; set; }
-
-        [JsonPropertyName("arch")]
-        public string? Arch { get; set; }
-
-        [JsonPropertyName("process")]
-        public string? Process { get; set; }
-
-        [JsonPropertyName("event")]
-        public string? Event { get; set; }
-
-        [JsonPropertyName("message")]
-        public string? Message { get; set; }
-    }
-
-    public AppLauncherService(SharedMemoryService shm, LocalProxyBridge bridge)
-    {
-        _shm = shm;
-        _bridge = bridge;
-        StartPipeServer();
+        StartBridgeDiscoveryLoop();
     }
 
     public async Task<(bool Ok, uint Pid, string Message)> LaunchAppAsync(AppProfile app, ProxyProfile? proxy)
@@ -74,207 +34,252 @@ public sealed class AppLauncherService : IDisposable
             return (false, 0, $"Executable not found: {app.ExePath}");
         }
 
-        string nativeDir = Path.Combine(AppContext.BaseDirectory, "native");
-        string detectedArch = PeInspector.DetectArchitecture(app.ExePath);
-        string injectorName = detectedArch == "x86" ? "AppProxy.Injector.x86.exe" : "AppProxy.Injector.x64.exe";
-        string injectorPath = Path.Combine(nativeDir, injectorName);
-
-        if (!File.Exists(injectorPath))
+        string baseDir = AppContext.BaseDirectory;
+        string bridgeExePath = Path.Combine(baseDir, "AppProxy.Bridge.exe");
+        if (!File.Exists(bridgeExePath))
         {
-            // Fallback to x64 injector (which also delegates x86 targets via IsWow64Process2)
-            string fallback = Path.Combine(nativeDir, "AppProxy.Injector.x64.exe");
-            if (File.Exists(fallback))
-            {
-                injectorPath = fallback;
-            }
-            else
-            {
-                return (false, 0, $"Native injector missing at {injectorPath}. Please build native x86/x64 projects.");
-            }
+            return (false, 0, $"Background bridge executable missing at {bridgeExePath}. Please build AppProxy.Bridge.");
         }
 
-        uint sessionId = Interlocked.Increment(ref _nextSessionId);
-        NativeSessionFlags flags = NativeSessionFlags.None;
-        if (proxy is null) flags |= NativeSessionFlags.DirectMode;
-        if (app.RemoteDns) flags |= NativeSessionFlags.RemoteDns;
-        if (app.BypassLan) flags |= NativeSessionFlags.BypassLan;
-        if (app.InjectChildren) flags |= NativeSessionFlags.InjectChildren;
-
-        _shm.RegisterSession(sessionId, flags);
-        _bridge.RegisterSession(new SessionContext
+        var request = new BridgeLaunchRequest
         {
-            SessionId = sessionId,
-            AppName = Path.GetFileName(app.ExePath),
-            Proxy = proxy,
+            AppName = string.IsNullOrWhiteSpace(app.Name) ? Path.GetFileName(app.ExePath) : app.Name,
+            ExePath = app.ExePath,
+            Arguments = app.Arguments ?? string.Empty,
+            WorkingDirectory = string.IsNullOrWhiteSpace(app.WorkingDirectory)
+                ? (Path.GetDirectoryName(app.ExePath) ?? string.Empty)
+                : app.WorkingDirectory,
+            RemoteDns = app.RemoteDns,
             BypassLan = app.BypassLan,
-            RemoteDns = app.RemoteDns
-        });
-
-        string exeB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(app.ExePath));
-        string argsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(app.Arguments ?? string.Empty));
-        string workDir = string.IsNullOrWhiteSpace(app.WorkingDirectory)
-            ? (Path.GetDirectoryName(app.ExePath) ?? string.Empty)
-            : app.WorkingDirectory;
-        string workDirB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(workDir));
-
-        var injectorArgs = new StringBuilder($"--launch --exe-b64 {exeB64}");
-        if (!string.IsNullOrEmpty(argsB64))
-        {
-            injectorArgs.Append($" --args-b64 {argsB64}");
-        }
-        if (!string.IsNullOrEmpty(workDirB64))
-        {
-            injectorArgs.Append($" --workdir-b64 {workDirB64}");
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = injectorPath,
-            Arguments = injectorArgs.ToString(),
-            WorkingDirectory = nativeDir,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
+            InjectChildren = app.InjectChildren,
+            Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
         };
 
-        psi.Environment["APPPROXY_BRIDGE_PID"] = _shm.BridgeId.ToString();
-        psi.Environment["APPPROXY_SESSION_ID"] = sessionId.ToString();
-        psi.Environment["APPPROXY_FLAGS"] = ((uint)flags).ToString();
-        psi.Environment["APPPROXY_SELF_DIR"] = nativeDir;
-
-        using var proc = Process.Start(psi);
-        if (proc is null)
-        {
-            _bridge.UnregisterSession(sessionId);
-            _shm.UnregisterSession(sessionId);
-            return (false, 0, "Failed to start native injector process.");
-        }
-
-        string stdout = await proc.StandardOutput.ReadToEndAsync();
-        string stderr = await proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
-
-        InjectorOutput? result = null;
+        string payloadB64 = BridgeIpcCodec.EncodeLaunchRequestBase64(request);
+        uint spawnedBridgePid;
+        string handshakeLine;
         try
         {
-            result = JsonSerializer.Deserialize<InjectorOutput>(stdout.Trim());
+            (spawnedBridgePid, handshakeLine) = await DetachedProcessLauncher.StartDetachedAndReadFirstLineAsync(
+                bridgeExePath,
+                $"--launch-b64 {payloadB64}",
+                baseDir,
+                TimeSpan.FromSeconds(12));
+        }
+        catch (Exception ex)
+        {
+            return (false, 0, $"Failed to start background bridge process: {ex.Message}");
+        }
+
+        BridgeHandshakeResponse? handshake = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(handshakeLine))
+            {
+                handshake = BridgeIpcCodec.DeserializeLine<BridgeHandshakeResponse>(handshakeLine.Trim());
+            }
         }
         catch
         {
         }
 
-        if (proc.ExitCode != 0 || result is null || !result.Ok)
+        uint effectiveBridgePid = handshake?.BridgePid is > 0 ? handshake.BridgePid : spawnedBridgePid;
+        if (handshake is null || !handshake.Ok)
         {
-            _bridge.UnregisterSession(sessionId);
-            _shm.UnregisterSession(sessionId);
-            string errMsg = result?.Error ?? (string.IsNullOrWhiteSpace(stderr) ? stdout : stderr);
-            return (false, 0, $"Launch injection failed: {errMsg.Trim()}");
+            string errMsg = handshake?.Error ?? (string.IsNullOrWhiteSpace(handshakeLine)
+                ? "Background bridge exited without handshake response."
+                : handshakeLine.Trim());
+            return (false, 0, errMsg);
         }
 
-        ProcessEventReceived?.Invoke(new ProcessEventRecord
+        var initialStatus = new BridgeStatusDto
         {
-            Timestamp = DateTime.Now,
-            SessionId = sessionId,
-            Pid = result.Pid,
-            ParentPid = (uint)Environment.ProcessId,
-            Arch = result.Arch ?? detectedArch,
-            ProcessName = Path.GetFileName(app.ExePath),
-            EventType = "Launched",
-            Message = proxy is not null
-                ? $"Launched via {proxy.Name} ({proxy.ProtocolDisplay} {proxy.EndpointDisplay})"
-                : "Launched in Direct mode"
-        });
+            BridgePid = effectiveBridgePid,
+            AppName = request.AppName,
+            TargetPid = handshake.TargetPid,
+            PortV4 = handshake.PortV4,
+            PortV6 = handshake.PortV6,
+            ActiveConnections = 0,
+            Alive = true
+        };
+        _activeBridges[effectiveBridgePid] = initialStatus;
+        BridgeStatusUpdated?.Invoke(initialStatus);
 
-        return (true, result.Pid, $"Launched PID {result.Pid} ({result.Arch})");
+        EnsureAttachedToBridgePipe(effectiveBridgePid);
+
+        string statusOut = !string.IsNullOrWhiteSpace(handshake.Warning)
+            ? $"Launched PID {handshake.TargetPid} ({handshake.Arch}) via Bridge #{effectiveBridgePid} - {handshake.Warning}"
+            : $"Launched PID {handshake.TargetPid} ({handshake.Arch}) via Bridge #{effectiveBridgePid}";
+        return (true, handshake.TargetPid, statusOut);
     }
 
-    private void StartPipeServer()
+    private void StartBridgeDiscoveryLoop()
     {
-        string pipeName = $"AppProxy_Log_{_shm.BridgeId}";
         _ = Task.Run(async () =>
         {
             while (!_cts.IsCancellationRequested)
             {
-                NamedPipeServerStream? server = null;
                 try
                 {
-                    server = new NamedPipeServerStream(
-                        pipeName,
-                        PipeDirection.In,
-                        NamedPipeServerStream.MaxAllowedServerInstances,
-                        PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
-
-                    await server.WaitForConnectionAsync(_cts.Token);
-                    var connectedPipe = server;
-                    server = null;
-                    _ = Task.Run(() => ReadPipeClientAsync(connectedPipe, _cts.Token), _cts.Token);
+                    DiscoverRunningBridges();
+                    await Task.Delay(2000, _cts.Token);
                 }
                 catch (OperationCanceledException)
                 {
-                    server?.Dispose();
                     break;
                 }
                 catch
                 {
-                    server?.Dispose();
-                    await Task.Delay(100, _cts.Token);
                 }
             }
         });
     }
 
-    private async Task ReadPipeClientAsync(NamedPipeServerStream pipe, CancellationToken ct)
+    private void DiscoverRunningBridges()
     {
-        await using (pipe)
-        using (var reader = new StreamReader(pipe, Encoding.UTF8))
+        var livePids = new HashSet<uint>();
+        try
         {
-            while (!ct.IsCancellationRequested && pipe.IsConnected)
+            foreach (var proc in Process.GetProcessesByName("AppProxy.Bridge"))
             {
-                string? line;
-                try
+                using (proc)
                 {
-                    line = await reader.ReadLineAsync(ct);
-                }
-                catch
-                {
-                    break;
-                }
-
-                if (line is null) break;
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                try
-                {
-                    var payload = JsonSerializer.Deserialize<PipeLogPayload>(line);
-                    if (payload is not null)
+                    try
                     {
-                        var record = new ProcessEventRecord
+                        if (!proc.HasExited)
                         {
-                            Timestamp = payload.Ts > 0
-                                ? DateTimeOffset.FromUnixTimeMilliseconds(payload.Ts).LocalDateTime
-                                : DateTime.Now,
-                            SessionId = payload.SessionId,
-                            Pid = payload.Pid,
-                            ParentPid = payload.ParentPid,
-                            Arch = payload.Arch ?? string.Empty,
-                            ProcessName = payload.Process ?? string.Empty,
-                            EventType = payload.Event ?? "Log",
-                            Message = payload.Message ?? string.Empty
-                        };
-                        ProcessEventReceived?.Invoke(record);
+                            uint pid = (uint)proc.Id;
+                            livePids.Add(pid);
+                            EnsureAttachedToBridgePipe(pid);
+                        }
+                    }
+                    catch
+                    {
                     }
                 }
-                catch
+            }
+        }
+        catch
+        {
+        }
+
+        foreach (uint trackedPid in _activeBridges.Keys)
+        {
+            if (!livePids.Contains(trackedPid) && _activeBridges.TryRemove(trackedPid, out _))
+            {
+                BridgeDisconnected?.Invoke(trackedPid);
+            }
+        }
+    }
+
+    private void EnsureAttachedToBridgePipe(uint bridgePid)
+    {
+        if (bridgePid == 0 || !_attachedPipes.TryAdd(bridgePid, 1))
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ConnectAndReadBridgePipeAsync(bridgePid, _cts.Token);
+            }
+            finally
+            {
+                _attachedPipes.TryRemove(bridgePid, out _);
+                if (!IsProcessAlive(bridgePid) && _activeBridges.TryRemove(bridgePid, out _))
                 {
+                    BridgeDisconnected?.Invoke(bridgePid);
                 }
             }
+        });
+    }
+
+    private async Task ConnectAndReadBridgePipeAsync(uint bridgePid, CancellationToken ct)
+    {
+        string pipeName = BridgeIpcCodec.GetUiPipeName(bridgePid);
+        using var client = new NamedPipeClientStream(
+            ".",
+            pipeName,
+            PipeDirection.In,
+            PipeOptions.Asynchronous);
+
+        try
+        {
+            await client.ConnectAsync(2000, ct);
+        }
+        catch
+        {
+            return;
+        }
+
+        using var reader = new StreamReader(client, Encoding.UTF8);
+        while (!ct.IsCancellationRequested && client.IsConnected)
+        {
+            string? line;
+            try
+            {
+                line = await reader.ReadLineAsync(ct);
+            }
+            catch
+            {
+                break;
+            }
+
+            if (line is null) break;
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            try
+            {
+                var env = BridgeIpcCodec.DeserializeLine<UiBridgeEnvelope>(line);
+                if (env is null) continue;
+
+                switch (env.Type)
+                {
+                    case "status" when env.Status is not null:
+                        if (env.Status.Alive)
+                        {
+                            _activeBridges[env.Status.BridgePid] = env.Status;
+                            BridgeStatusUpdated?.Invoke(env.Status);
+                        }
+                        else if (_activeBridges.TryRemove(env.Status.BridgePid, out _))
+                        {
+                            BridgeDisconnected?.Invoke(env.Status.BridgePid);
+                        }
+                        break;
+
+                    case "event" when env.Event is not null:
+                        ProcessEventReceived?.Invoke(env.Event.ToRecord());
+                        break;
+
+                    case "conn" when env.Connection is not null:
+                        ConnectionUpserted?.Invoke(env.Connection);
+                        break;
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static bool IsProcessAlive(uint pid)
+    {
+        try
+        {
+            using var p = Process.GetProcessById((int)pid);
+            return !p.HasExited;
+        }
+        catch
+        {
+            return false;
         }
     }
 
     public void Dispose()
     {
+        // Only detach UI pipe subscriptions; never terminate running AppProxy.Bridge.exe processes.
         if (_disposed) return;
         _disposed = true;
         _cts.Cancel();

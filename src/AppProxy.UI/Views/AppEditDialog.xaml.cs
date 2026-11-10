@@ -63,7 +63,7 @@ public partial class AppEditDialog : FluentWindow
         string exePath = ExePathBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(exePath))
         {
-            System.Windows.MessageBox.Show(this, "请填写或选择可执行文件路径。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show(this, "请填写或选择可执行文件路径。", "提示", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
