@@ -8,6 +8,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>AppProxy.Bridge</AssemblyName>
     <RootNamespace>AppProxy.Bridge</RootNamespace>
+    <ApplicationIcon>..\AppProxy.UI\Assets\AppProxy.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

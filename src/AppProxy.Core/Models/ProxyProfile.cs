@@ -40,16 +40,19 @@ public partial class ProxyProfile : ObservableObject
     [ObservableProperty]
     [property: JsonIgnore]
     [NotifyPropertyChangedFor(nameof(LatencyDisplay))]
+    [NotifyPropertyChangedFor(nameof(LatencyLevel))]
     private int? _lastLatencyMs;
 
     [ObservableProperty]
     [property: JsonIgnore]
     [NotifyPropertyChangedFor(nameof(LatencyDisplay))]
+    [NotifyPropertyChangedFor(nameof(LatencyLevel))]
     private string _lastTestStatus = "Untested";
 
     [ObservableProperty]
     [property: JsonIgnore]
     [NotifyPropertyChangedFor(nameof(LatencyDisplay))]
+    [NotifyPropertyChangedFor(nameof(LatencyLevel))]
     private bool _isTesting;
 
     [JsonIgnore]
@@ -73,6 +76,28 @@ public partial class ProxyProfile : ObservableObject
         : LastLatencyMs.HasValue
             ? $"{LastLatencyMs.Value} ms"
             : LastTestStatus;
+
+    [JsonIgnore]
+    public string LatencyLevel
+    {
+        get
+        {
+            if (IsTesting) return "Testing";
+            if (LastLatencyMs.HasValue)
+            {
+                return LastLatencyMs.Value switch
+                {
+                    <= 120 => "Good",
+                    <= 350 => "Medium",
+                    _ => "Bad"
+                };
+            }
+
+            return string.Equals(LastTestStatus, "Untested", StringComparison.OrdinalIgnoreCase)
+                ? "Untested"
+                : "Bad";
+        }
+    }
 
     public ProxyProfile Clone() => new()
     {

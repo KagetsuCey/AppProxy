@@ -3,12 +3,13 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="配置应用"
-                 Width="540"
-                 Height="605"
+                 Width="560"
+                 Height="660"
                  ResizeMode="NoResize"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
-                 WindowBackdropType="Mica">
+                 WindowBackdropType="Mica"
+                 Icon="pack://application:,,,/Assets/AppProxy.ico">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -18,71 +19,132 @@
 
         <ui:TitleBar Grid.Row="0" Title="应用代理配置" ShowMaximize="False" ShowMinimize="False" />
 
-        <ScrollViewer Grid.Row="1" Padding="20,12,20,12" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="1" Padding="20,10,20,12" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <TextBlock Text="应用名称" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="NameBox" PlaceholderText="例如: Chrome / Git / Python" Margin="0,0,0,12" />
-
-                <TextBlock Text="可执行文件路径 (.exe)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <Grid Margin="0,0,0,12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:TextBox x:Name="ExePathBox" Grid.Column="0" PlaceholderText="选择目标 .exe 文件..." Margin="0,0,8,0" />
-                    <ui:Button Grid.Column="1" Content="浏览..." Icon="{ui:SymbolIcon FolderOpen24}" Click="OnBrowseExe" />
-                </Grid>
-
-                <TextBlock Text="启动参数 (可选)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="ArgsBox" PlaceholderText="例如: --remote-debugging-port=9222" Margin="0,0,0,12" />
-
-                <TextBlock Text="工作目录 (留空则使用 EXE 所在目录)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="WorkDirBox" PlaceholderText="默认使用可执行文件目录" Margin="0,0,0,12" />
-
-                <TextBlock Text="绑定代理节点" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <ComboBox x:Name="ProxyCombo" DisplayMemberPath="DisplayName" SelectedValuePath="Id" Margin="0,0,0,16" />
-
-                <Border CornerRadius="8"
-                        Padding="12"
+                <!-- Header Banner -->
+                <Border CornerRadius="10"
+                        Padding="14,12"
+                        Margin="0,0,0,14"
                         BorderThickness="1"
-                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                        BorderBrush="{DynamicResource AppAccentBorderBrush}"
+                        Background="{DynamicResource AppAccentSoftBrush}">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="36"
+                                Height="36"
+                                CornerRadius="8"
+                                Margin="0,0,12,0"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                            <ui:SymbolIcon Symbol="Apps24" FontSize="18" Foreground="{DynamicResource AppAccentBrush}" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="目标应用与注入策略" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="支持选择 .exe 或 .lnk 快捷方式，自动解析启动参数与架构"
+                                       FontSize="11.5"
+                                       Margin="0,2,0,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Section 1: Basic Target -->
+                <Border Style="{StaticResource SectionCardStyle}" Padding="14" Margin="0,0,0,12">
                     <StackPanel>
+                        <TextBlock Text="应用标识与目标路径"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                        <TextBlock Text="应用名称" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ui:TextBox x:Name="NameBox" PlaceholderText="例如: Chrome / Git / Python" Margin="0,0,0,12" />
+
+                        <TextBlock Text="可执行文件路径 (.exe / .lnk)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox x:Name="ExePathBox" Grid.Column="0" PlaceholderText="选择目标 .exe 或快捷方式..." Margin="0,0,8,0" />
+                            <ui:Button Grid.Column="1" Content="浏览..." Icon="{ui:SymbolIcon FolderOpen24}" Click="OnBrowseExe" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Section 2: Launch Environment -->
+                <Border Style="{StaticResource SectionCardStyle}" Padding="14" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="启动环境（可选）"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                        <TextBlock Text="启动参数" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ui:TextBox x:Name="ArgsBox" PlaceholderText="例如: --remote-debugging-port=9222" Margin="0,0,0,12" />
+
+                        <TextBlock Text="工作目录 (留空则使用 EXE 所在目录)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ui:TextBox x:Name="WorkDirBox" PlaceholderText="默认使用可执行文件目录" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Section 3: Proxy & Network Policies -->
+                <Border Style="{StaticResource SectionCardStyle}" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="代理节点与网络接管策略"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,10"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                        <TextBlock Text="绑定代理节点" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ComboBox x:Name="ProxyCombo" DisplayMemberPath="DisplayName" SelectedValuePath="Id" Margin="0,0,0,14" />
+
+                        <Border Height="1" Margin="0,0,0,12" Background="{DynamicResource SubtleDividerBrush}" />
+
                         <Grid Margin="0,0,0,10">
-                            <StackPanel>
+                            <StackPanel Margin="0,0,64,0">
                                 <TextBlock Text="远程 DNS 解析 (Fake-IP)" FontWeight="SemiBold" />
                                 <TextBlock Text="拦截 getaddrinfo/GetAddrInfoExW 返回虚拟 IP，防止本地 DNS 泄漏"
-                                           FontSize="12"
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="RemoteDnsToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
 
+                        <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource SubtleDividerBrush}" />
+
                         <Grid Margin="0,0,0,10">
-                            <StackPanel>
+                            <StackPanel Margin="0,0,64,0">
                                 <TextBlock Text="绕过局域网与回环地址" FontWeight="SemiBold" />
                                 <TextBlock Text="直连 127.0.0.0/8、192.168.0.0/16、10.0.0.0/8 等内网地址"
-                                           FontSize="12"
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="BypassLanToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
 
+                        <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource SubtleDividerBrush}" />
+
                         <Grid Margin="0,0,0,10">
-                            <StackPanel>
+                            <StackPanel Margin="0,0,64,0">
                                 <TextBlock Text="自动注入子进程 (x86 / x64)" FontWeight="SemiBold" />
                                 <TextBlock Text="Hook CreateProcessW/A，自动代理派生出的所有子进程"
-                                           FontSize="12"
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="InjectChildrenToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
 
+                        <Border Height="1" Margin="0,0,0,10" Background="{DynamicResource SubtleDividerBrush}" />
+
                         <Grid>
-                            <StackPanel Margin="0,0,60,0">
+                            <StackPanel Margin="0,0,64,0">
                                 <TextBlock Text="独立浏览器数据目录 (--user-data-dir)" FontWeight="SemiBold" />
                                 <TextBlock Text="为 Edge/Chrome 自动分配独立目录，避免被后台常驻单实例接管"
-                                           FontSize="12"
+                                           FontSize="11.5"
                                            TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
@@ -93,9 +155,16 @@
             </StackPanel>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,12,20,16">
-            <ui:Button Content="取消" Appearance="Secondary" Click="OnCancel" Margin="0,0,10,0" Width="90" />
-            <ui:Button Content="保存" Appearance="Primary" Click="OnSave" Width="90" />
-        </StackPanel>
+        <!-- Footer Action Bar -->
+        <Border Grid.Row="2"
+                Padding="20,12,20,14"
+                Background="{DynamicResource StatusBarBackgroundBrush}"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="取消" Appearance="Secondary" Click="OnCancel" Margin="0,0,10,0" Width="92" />
+                <ui:Button Content="保存配置" Appearance="Primary" Click="OnSave" Width="104" />
+            </StackPanel>
+        </Border>
     </Grid>
 </ui:FluentWindow>

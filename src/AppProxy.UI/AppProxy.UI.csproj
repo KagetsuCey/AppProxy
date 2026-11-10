@@ -11,7 +11,13 @@
     <AssemblyName>AppProxy.UI</AssemblyName>
     <RootNamespace>AppProxy.UI</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Assets\AppProxy.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\AppProxy.ico" />
+    <Resource Include="Assets\AppProxy.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />

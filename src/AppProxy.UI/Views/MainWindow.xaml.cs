@@ -13,6 +13,11 @@ public partial class MainWindow : FluentWindow
         DataContext = App.ViewModel;
     }
 
+    private void OnOpenMonitorClick(object sender, RoutedEventArgs e)
+    {
+        App.ViewModel.SelectedNavIndex = 2;
+    }
+
     private void OnAddAppClick(object sender, RoutedEventArgs e)
     {
         var dlg = new AppEditDialog(null, App.ViewModel.Proxies) { Owner = this };
@@ -67,11 +72,22 @@ public partial class MainWindow : FluentWindow
         {
             e.Effects = DragDropEffects.Copy;
             e.Handled = true;
+            AppsDropOverlay.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnAppsDragLeave(object sender, DragEventArgs e)
+    {
+        Point pos = e.GetPosition(AppsPageRoot);
+        if (pos.X <= 0 || pos.Y <= 0 || pos.X >= AppsPageRoot.ActualWidth || pos.Y >= AppsPageRoot.ActualHeight)
+        {
+            AppsDropOverlay.Visibility = Visibility.Collapsed;
         }
     }
 
     private void OnAppsDrop(object sender, DragEventArgs e)
     {
+        AppsDropOverlay.Visibility = Visibility.Collapsed;
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
         {
             foreach (string file in files)

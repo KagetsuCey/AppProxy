@@ -50,7 +50,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _bridgeStatusText = "独立后台桥接就绪 (按需随应用启动)";
 
     [ObservableProperty]
+    private int _activeBridgesCount;
+
+    [ObservableProperty]
+    private bool _hasActiveBridges;
+
+    [ObservableProperty]
     private int _activeConnectionsCount;
+
+    [ObservableProperty]
+    private string _totalBytesUpFormatted = "0 B";
+
+    [ObservableProperty]
+    private string _totalBytesDownFormatted = "0 B";
 
     [ObservableProperty]
     private string _statusMessage = "Ready";
@@ -118,7 +130,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         if (Application.Current is not null)
         {
-            ApplicationThemeManager.Apply(value ? ApplicationTheme.Dark : ApplicationTheme.Light);
+            var theme = value ? ApplicationTheme.Dark : ApplicationTheme.Light;
+            try
+            {
+                ApplicationThemeManager.Apply(theme, Wpf.Ui.Controls.WindowBackdropType.Mica, updateAccent: false);
+            }
+            catch
+            {
+                try
+                {
+                    ApplicationThemeManager.Apply(theme, Wpf.Ui.Controls.WindowBackdropType.None, updateAccent: false);
+                }
+                catch
+                {
+                }
+            }
+            ThemeTokenHelper.ApplySemanticTokens(value);
         }
         if (!_isInitializing)
         {
@@ -130,6 +157,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var bridges = _launcher.ActiveBridges;
         int totalActive = bridges.Sum(b => b.ActiveConnections);
+        ActiveBridgesCount = bridges.Count;
+        HasActiveBridges = bridges.Count > 0;
         ActiveConnectionsCount = totalActive;
 
         if (bridges.Count == 0)
@@ -148,6 +177,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             BridgeStatusText = $"后台桥接运行中: {bridges.Count} 个独立实例";
         }
+    }
+
+    private void RefreshTrafficTotals()
+    {
+        long totalUp = 0;
+        long totalDown = 0;
+        foreach (var conn in Connections)
+        {
+            totalUp += conn.BytesUp;
+            totalDown += conn.BytesDown;
+        }
+        TotalBytesUpFormatted = ConnectionRecord.FormatBytes(totalUp);
+        TotalBytesDownFormatted = ConnectionRecord.FormatBytes(totalDown);
     }
 
     private void MarkBridgeConnectionsClosed(uint bridgePid)
@@ -224,6 +266,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             conn.SyncToUi();
         }
 
+        RefreshTrafficTotals();
         RefreshBridgeSummary();
     }
 
@@ -391,12 +434,33 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _connectionIndex.Clear();
         Connections.Clear();
+        RefreshTrafficTotals();
     }
 
     [RelayCommand]
     private void ClearProcessEvents()
     {
         ProcessEvents.Clear();
+    }
+
+    [RelayCommand]
+    private void ToggleTheme()
+    {
+        IsDarkTheme = !IsDarkTheme;
+    }
+
+    [RelayCommand]
+    private void CopyConfigFilePath()
+    {
+        try
+        {
+            Clipboard.SetText(ConfigFilePath);
+            StatusMessage = "已复制配置文件路径到剪贴板";
+        }
+        catch
+        {
+            StatusMessage = "复制配置文件路径失败";
+        }
     }
 
     [RelayCommand]

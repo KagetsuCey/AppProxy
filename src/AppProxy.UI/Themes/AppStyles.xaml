@@ -1,0 +1,142 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Default Semantic Color Tokens (Dark theme baseline; dynamically updated by ThemeTokenHelper) -->
+    <SolidColorBrush x:Key="AppAccentBrush" Color="#60A5FA" />
+    <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#243B82F6" />
+    <SolidColorBrush x:Key="AppAccentBorderBrush" Color="#5060A5FA" />
+
+    <SolidColorBrush x:Key="SemanticSuccessBrush" Color="#34D399" />
+    <SolidColorBrush x:Key="SemanticSuccessBgBrush" Color="#2210B981" />
+    <SolidColorBrush x:Key="SemanticSuccessBorderBrush" Color="#4834D399" />
+
+    <SolidColorBrush x:Key="SemanticWarningBrush" Color="#FBBF24" />
+    <SolidColorBrush x:Key="SemanticWarningBgBrush" Color="#22F59E0B" />
+    <SolidColorBrush x:Key="SemanticWarningBorderBrush" Color="#48FBBF24" />
+
+    <SolidColorBrush x:Key="SemanticErrorBrush" Color="#F87171" />
+    <SolidColorBrush x:Key="SemanticErrorBgBrush" Color="#22EF4444" />
+    <SolidColorBrush x:Key="SemanticErrorBorderBrush" Color="#48F87171" />
+
+    <SolidColorBrush x:Key="SemanticInfoBrush" Color="#60A5FA" />
+    <SolidColorBrush x:Key="SemanticInfoBgBrush" Color="#223B82F6" />
+    <SolidColorBrush x:Key="SemanticInfoBorderBrush" Color="#4860A5FA" />
+
+    <SolidColorBrush x:Key="SemanticPurpleBrush" Color="#A78BFA" />
+    <SolidColorBrush x:Key="SemanticPurpleBgBrush" Color="#228B5CF6" />
+    <SolidColorBrush x:Key="SemanticPurpleBorderBrush" Color="#48A78BFA" />
+
+    <SolidColorBrush x:Key="SemanticTealBrush" Color="#2DD4BF" />
+    <SolidColorBrush x:Key="SemanticTealBgBrush" Color="#2214B8A6" />
+    <SolidColorBrush x:Key="SemanticTealBorderBrush" Color="#482DD4BF" />
+
+    <SolidColorBrush x:Key="SemanticNeutralBgBrush" Color="#18FFFFFF" />
+    <SolidColorBrush x:Key="SemanticNeutralBorderBrush" Color="#26FFFFFF" />
+
+    <SolidColorBrush x:Key="NavRailBackgroundBrush" Color="#14000000" />
+    <SolidColorBrush x:Key="NavItemSelectedBrush" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="CardHoverBackgroundBrush" Color="#12FFFFFF" />
+    <SolidColorBrush x:Key="CardHoverBorderBrush" Color="#38FFFFFF" />
+    <SolidColorBrush x:Key="SubtleDividerBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#18000000" />
+    <SolidColorBrush x:Key="DropzoneBackgroundBrush" Color="#143B82F6" />
+    <SolidColorBrush x:Key="IconContainerBgBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="BrandBadgeStartBrush" Color="#2563EB" />
+    <SolidColorBrush x:Key="BrandBadgeEndBrush" Color="#7C3AED" />
+
+    <!-- Interactive Item Card (Apps / Proxies) -->
+    <Style x:Key="InteractiveCardStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="14,13" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource CardHoverBackgroundBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource CardHoverBorderBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Static Section / KPI Card -->
+    <Style x:Key="SectionCardStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+    </Style>
+
+    <!-- Compact Metadata Pill -->
+    <Style x:Key="PillBadgeStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="5" />
+        <Setter Property="Padding" Value="7,2" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- Navigation Rail ListBoxItem -->
+    <Style x:Key="NavRailItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,9" />
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="ItemRoot"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}">
+                        <Grid>
+                            <Border x:Name="ActiveIndicator"
+                                    Width="3"
+                                    Height="16"
+                                    CornerRadius="1.5"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource AppAccentBrush}"
+                                    Visibility="Collapsed" />
+                            <ContentPresenter Margin="10,0,0,0"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ItemRoot" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemRoot" Property="Background" Value="{DynamicResource NavItemSelectedBrush}" />
+                            <Setter TargetName="ActiveIndicator" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- DataGrid Cell & Text Enhancements -->
+    <Style x:Key="GridCellTextStyle" TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="6,0" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="GridMonoTextStyle" TargetType="TextBlock" BasedOn="{StaticResource GridCellTextStyle}">
+        <Setter Property="FontFamily" Value="Consolas" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style x:Key="GridMonoRightTextStyle" TargetType="TextBlock" BasedOn="{StaticResource GridMonoTextStyle}">
+        <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+
+</ResourceDictionary>

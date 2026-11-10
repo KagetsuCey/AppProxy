@@ -24,9 +24,11 @@ public partial class AppProfile : ObservableObject
     private string _name = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EffectiveIsolateProfileDir))]
     private string _exePath = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasArguments))]
     private string _arguments = string.Empty;
 
     [ObservableProperty]
@@ -45,6 +47,7 @@ public partial class AppProfile : ObservableObject
     private bool _injectChildren = true;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EffectiveIsolateProfileDir))]
     private bool? _isolateProfileDir;
 
     [ObservableProperty]
@@ -67,6 +70,12 @@ public partial class AppProfile : ObservableObject
 
     public bool GetEffectiveIsolateProfileDir() =>
         IsolateProfileDir ?? IsChromiumBrowserExe(ExePath);
+
+    [JsonIgnore]
+    public bool EffectiveIsolateProfileDir => GetEffectiveIsolateProfileDir();
+
+    [JsonIgnore]
+    public bool HasArguments => !string.IsNullOrWhiteSpace(Arguments);
 
     public AppProfile Clone() => new()
     {
