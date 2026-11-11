@@ -20,4 +20,22 @@
     <ProjectReference Include="..\..\src\AppProxy.UI\AppProxy.UI.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyNativeBinariesForTests" AfterTargets="Build">
+    <PropertyGroup>
+      <NativeOutDir>$(OutDir)native\</NativeOutDir>
+      <NativeBinX64>$(MSBuildThisFileDirectory)..\..\artifacts\bin\x64\$(Configuration)\</NativeBinX64>
+      <NativeBinX64 Condition="!Exists('$(NativeBinX64)AppProxy.Injector.x64.exe')">$(MSBuildThisFileDirectory)..\..\artifacts\bin\x64\Release\</NativeBinX64>
+      <NativeBinX86>$(MSBuildThisFileDirectory)..\..\artifacts\bin\Win32\$(Configuration)\</NativeBinX86>
+      <NativeBinX86 Condition="!Exists('$(NativeBinX86)AppProxy.Injector.x86.exe')">$(MSBuildThisFileDirectory)..\..\artifacts\bin\Win32\Release\</NativeBinX86>
+    </PropertyGroup>
+    <MakeDir Directories="$(NativeOutDir)" />
+    <ItemGroup>
+      <TestNativeArtifacts Include="$(NativeBinX64)AppProxy.Hook.x64.dll" Condition="Exists('$(NativeBinX64)AppProxy.Hook.x64.dll')" />
+      <TestNativeArtifacts Include="$(NativeBinX64)AppProxy.Injector.x64.exe" Condition="Exists('$(NativeBinX64)AppProxy.Injector.x64.exe')" />
+      <TestNativeArtifacts Include="$(NativeBinX86)AppProxy.Hook.x86.dll" Condition="Exists('$(NativeBinX86)AppProxy.Hook.x86.dll')" />
+      <TestNativeArtifacts Include="$(NativeBinX86)AppProxy.Injector.x86.exe" Condition="Exists('$(NativeBinX86)AppProxy.Injector.x86.exe')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestNativeArtifacts)" DestinationFolder="$(NativeOutDir)" SkipUnchangedFiles="true" Condition="'@(TestNativeArtifacts)' != ''" />
+  </Target>
+
 </Project>
