@@ -4,17 +4,32 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using AppProxy.UI.Services;
 using Microsoft.Win32.SafeHandles;
 
 namespace AppProxy.UI.Interop;
 
+public sealed record JobTargetMonitorOptions
+{
+    public required string TargetExePath { get; init; }
+    public uint TargetPid { get; init; }
+    public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(750);
+    public TimeSpan InfraOnlyGracePeriod { get; init; } = TimeSpan.FromMilliseconds(1500);
+    public TimeSpan OrphanHelperGracePeriod { get; init; } = TimeSpan.FromMilliseconds(3500);
+    public bool TerminateOrphansOnTargetExit { get; init; } = true;
+    public Action<string>? OnJobCleanup { get; init; }
+}
+
 /// <summary>
 /// Binds a launched child process tree to a Windows Job Object and signals
-/// when the last active process in that tree exits (JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO).
+/// when the last active process in that tree exits (JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO),
+/// or when the target application has exited leaving only trapped infrastructure/helper orphans.
 /// </summary>
 public sealed class JobObjectTracker : IDisposable
 {
+    private const int JobObjectBasicProcessIdList = 3;
     private const int JobObjectAssociateCompletionPortInformation = 7;
+    private const int ERROR_MORE_DATA = 234;
     private const uint JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO = 4;
     private const uint JOB_OBJECT_MSG_NEW_PROCESS = 6;
     private const uint JOB_OBJECT_MSG_EXIT_PROCESS = 7;
@@ -149,17 +164,33 @@ public sealed class JobObjectTracker : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(
+        IntPtr hJob,
+        int jobObjectInformationClass,
+        IntPtr lpJobObjectInformation,
+        uint cbJobObjectInformationLength,
+        out uint lpReturnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateJobObject(IntPtr hJob, uint uExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetExitCodeProcess(SafeProcessHandle hProcess, out uint lpExitCode);
 
-    private readonly IntPtr _hJob;
+    private readonly object _jobSync = new();
+    private IntPtr _hJob;
     private readonly IntPtr _hIocp;
     private readonly Thread? _iocpThread;
     private readonly ConcurrentDictionary<uint, byte> _trackedPids = new();
     private readonly TaskCompletionSource _allExitedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private CancellationTokenSource? _watchdogCts;
+    private int _watchdogStarted;
     private int _assignedCount;
     private int _disposed;
 
-    public bool IsJobSupported => _hJob != IntPtr.Zero && _hIocp != IntPtr.Zero;
+    public bool IsJobSupported => Volatile.Read(ref _disposed) == 0 && _hJob != IntPtr.Zero && _hIocp != IntPtr.Zero;
     public Task AllProcessesExited => _allExitedTcs.Task;
 
     public JobObjectTracker()
@@ -318,9 +349,12 @@ public sealed class JobObjectTracker : IDisposable
 
             try
             {
-                if (IsJobSupported && AssignProcessToJobObject(_hJob, pi.hProcess))
+                lock (_jobSync)
                 {
-                    Interlocked.Increment(ref _assignedCount);
+                    if (IsJobSupported && AssignProcessToJobObject(_hJob, pi.hProcess))
+                    {
+                        Interlocked.Increment(ref _assignedCount);
+                    }
                 }
             }
             finally
@@ -386,8 +420,273 @@ public sealed class JobObjectTracker : IDisposable
             TaskScheduler.Default);
     }
 
+    public uint[] GetActiveProcessIds()
+    {
+        if (Volatile.Read(ref _disposed) != 0) return [];
+
+        lock (_jobSync)
+        {
+            if (_disposed != 0 || _hJob == IntPtr.Zero) return [];
+
+            int capacity = 64;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                uint bufBytes = (uint)(8 + (capacity * IntPtr.Size));
+                IntPtr buf = Marshal.AllocHGlobal((int)bufBytes);
+                try
+                {
+                    bool ok = QueryInformationJobObject(_hJob, JobObjectBasicProcessIdList, buf, bufBytes, out _);
+                    int err = ok ? 0 : Marshal.GetLastWin32Error();
+                    uint assigned = (uint)Marshal.ReadInt32(buf, 0);
+                    uint count = (uint)Marshal.ReadInt32(buf, 4);
+
+                    if (ok && assigned <= count)
+                    {
+                        uint safeCount = Math.Min(count, (uint)capacity);
+                        if (safeCount == 0) return [];
+
+                        var pids = new uint[safeCount];
+                        for (int i = 0; i < safeCount; i++)
+                        {
+                            pids[i] = (uint)Marshal.ReadIntPtr(buf, 8 + (i * IntPtr.Size)).ToInt64();
+                        }
+                        return pids;
+                    }
+
+                    if (err == ERROR_MORE_DATA || assigned > count)
+                    {
+                        capacity = Math.Max(capacity * 2, (int)assigned + 16);
+                        continue;
+                    }
+
+                    return [];
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buf);
+                }
+            }
+        }
+
+        return [];
+    }
+
+    public bool TerminateJobProcesses(uint exitCode = 0)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return false;
+
+        lock (_jobSync)
+        {
+            if (_disposed != 0 || _hJob == IntPtr.Zero) return false;
+            return TerminateJobObject(_hJob, exitCode);
+        }
+    }
+
+    public void StartTargetExitWatchdog(JobTargetMonitorOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (Volatile.Read(ref _disposed) != 0 || _allExitedTcs.Task.IsCompleted)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _watchdogStarted, 1) != 0)
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _watchdogCts = cts;
+        _ = Task.Run(() => TargetWatchdogLoopAsync(options, cts.Token), CancellationToken.None);
+    }
+
+    private void SignalAllProcessesExited()
+    {
+        _allExitedTcs.TrySetResult();
+        try { _watchdogCts?.Cancel(); } catch { }
+    }
+
+    private async Task TargetWatchdogLoopAsync(JobTargetMonitorOptions options, CancellationToken ct)
+    {
+        string normalizedTarget = ProcessInstanceCounter.NormalizePath(options.TargetExePath);
+        string? canonicalTarget = ProcessInstanceCounter.TryGetFinalFilePath(normalizedTarget);
+        bool isShellTarget = ProcessInspectionHelper.IsShellOrWrapperLauncherExe(options.TargetExePath);
+        TimeSpan pollInterval = options.PollInterval < TimeSpan.FromMilliseconds(50)
+            ? TimeSpan.FromMilliseconds(50)
+            : options.PollInterval;
+
+        long? orphanSinceTicks = null;
+
+        try
+        {
+            while (!ct.IsCancellationRequested &&
+                   Volatile.Read(ref _disposed) == 0 &&
+                   !_allExitedTcs.Task.IsCompleted)
+            {
+                await Task.Delay(pollInterval, ct);
+
+                bool jobSupported = IsJobSupported;
+                uint[] candidatePids = jobSupported
+                    ? GetActiveProcessIds()
+                    : _trackedPids.Keys.ToArray();
+
+                if (candidatePids.Length == 0)
+                {
+                    if (jobSupported || _trackedPids.IsEmpty)
+                    {
+                        SignalAllProcessesExited();
+                        return;
+                    }
+                    continue;
+                }
+
+                uint selfPid = (uint)Environment.ProcessId;
+                bool hasPrimaryTarget = false;
+                bool hasAnyAlive = false;
+                var infraSurvivors = new List<(uint Pid, string Label)>();
+                var nonTargetSurvivors = new List<(uint Pid, string Label)>();
+
+                foreach (uint pid in candidatePids)
+                {
+                    if (pid == 0 || pid == selfPid) continue;
+
+                    ProcessLiveState state = ProcessInspectionHelper.InspectProcess(
+                        pid,
+                        includeCommandLine: true,
+                        out string? imagePath,
+                        out string? commandLine);
+
+                    if (state == ProcessLiveState.Exited)
+                    {
+                        continue;
+                    }
+
+                    hasAnyAlive = true;
+                    string exeName = !string.IsNullOrWhiteSpace(imagePath)
+                        ? Path.GetFileName(imagePath)
+                        : $"pid:{pid}";
+
+                    if (state == ProcessLiveState.AccessDenied)
+                    {
+                        nonTargetSurvivors.Add((pid, exeName));
+                        continue;
+                    }
+
+                    bool isCrashpadOrCrash = ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(exeName, commandLine);
+                    bool matchesTargetPath = !string.IsNullOrWhiteSpace(imagePath) &&
+                                             ProcessInstanceCounter.PathsMatch(imagePath, normalizedTarget, canonicalTarget);
+
+                    if (matchesTargetPath && !isCrashpadOrCrash)
+                    {
+                        hasPrimaryTarget = true;
+                        break;
+                    }
+
+                    if (ProcessInspectionHelper.IsPureInfrastructureProcess(exeName, commandLine))
+                    {
+                        string tag = isCrashpadOrCrash &&
+                                     !string.Equals(exeName, "crashpad_handler.exe", StringComparison.OrdinalIgnoreCase)
+                            ? $"{exeName}[crashpad]"
+                            : exeName;
+                        infraSurvivors.Add((pid, tag));
+                    }
+                    else
+                    {
+                        nonTargetSurvivors.Add((pid, exeName));
+                    }
+                }
+
+                if (hasPrimaryTarget)
+                {
+                    orphanSinceTicks = null;
+                    continue;
+                }
+
+                if (!hasAnyAlive)
+                {
+                    // All queried PIDs had just exited; confirm job/fallback empty next cycle or immediately if Job reports empty.
+                    if (jobSupported && GetActiveProcessIds().Length == 0)
+                    {
+                        SignalAllProcessesExited();
+                        return;
+                    }
+                    continue;
+                }
+
+                if (nonTargetSurvivors.Count > 0)
+                {
+                    if (isShellTarget)
+                    {
+                        orphanSinceTicks = null;
+                        continue;
+                    }
+
+                    var nonTargetPids = new HashSet<uint>(nonTargetSurvivors.Count);
+                    foreach (var s in nonTargetSurvivors)
+                    {
+                        nonTargetPids.Add(s.Pid);
+                    }
+
+                    HashSet<uint> visibleWindowPids = ProcessInspectionHelper.GetProcessIdsWithVisibleWindows(nonTargetPids);
+                    if (visibleWindowPids.Count > 0)
+                    {
+                        orphanSinceTicks = null;
+                        continue;
+                    }
+                }
+
+                TimeSpan requiredGrace = nonTargetSurvivors.Count > 0
+                    ? options.OrphanHelperGracePeriod
+                    : options.InfraOnlyGracePeriod;
+
+                orphanSinceTicks ??= Stopwatch.GetTimestamp();
+                if (Stopwatch.GetElapsedTime(orphanSinceTicks.Value) < requiredGrace)
+                {
+                    continue;
+                }
+
+                // Grace period elapsed continuously with zero primary target processes and zero visible child GUI windows.
+                var summaryParts = new List<string>(8);
+                foreach (var s in nonTargetSurvivors)
+                {
+                    if (summaryParts.Count >= 8) break;
+                    summaryParts.Add($"{s.Label}#{s.Pid}");
+                }
+                foreach (var s in infraSurvivors)
+                {
+                    if (summaryParts.Count >= 8) break;
+                    summaryParts.Add($"{s.Label}#{s.Pid}");
+                }
+                string summary = string.Join(", ", summaryParts);
+
+                if (options.TerminateOrphansOnTargetExit && jobSupported)
+                {
+                    TerminateJobProcesses(0);
+                }
+
+                try
+                {
+                    options.OnJobCleanup?.Invoke(summary);
+                }
+                catch
+                {
+                }
+
+                SignalAllProcessesExited();
+                return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+        }
+    }
+
     private void IocpLoop()
     {
+        bool exitedCleanly = false;
         while (Volatile.Read(ref _disposed) == 0)
         {
             bool ok = GetQueuedCompletionStatus(
@@ -414,9 +713,18 @@ public sealed class JobObjectTracker : IDisposable
             }
             else if (msgId == JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO)
             {
-                _allExitedTcs.TrySetResult();
+                exitedCleanly = true;
+                SignalAllProcessesExited();
                 break;
             }
+        }
+
+        if (!exitedCleanly &&
+            Volatile.Read(ref _disposed) == 0 &&
+            !_allExitedTcs.Task.IsCompleted &&
+            GetActiveProcessIds().Length == 0)
+        {
+            SignalAllProcessesExited();
         }
     }
 
@@ -463,14 +771,24 @@ public sealed class JobObjectTracker : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+        try { _watchdogCts?.Cancel(); } catch { }
+        try { _watchdogCts?.Dispose(); } catch { }
+        _watchdogCts = null;
+
         if (_hIocp != IntPtr.Zero)
         {
             PostQueuedCompletionStatus(_hIocp, 0, UIntPtr.Zero, IntPtr.Zero);
             CloseHandle(_hIocp);
         }
-        if (_hJob != IntPtr.Zero)
+
+        lock (_jobSync)
         {
-            CloseHandle(_hJob);
+            if (_hJob != IntPtr.Zero)
+            {
+                CloseHandle(_hJob);
+                _hJob = IntPtr.Zero;
+            }
         }
     }
 }

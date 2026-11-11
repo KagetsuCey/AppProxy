@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using AppProxy.UI.Interop;
 using AppProxy.UI.Models;
 using AppProxy.UI.Services;
 using Xunit;
@@ -53,6 +54,80 @@ public class ProcessInstanceCounterTests
         InstanceLimitCheckResult negRes = ProcessInstanceCounter.CheckCanLaunch(uniqueMissingExe, -10, "TestApp");
         Assert.True(negRes.Allowed);
         Assert.Equal(1, negRes.MaxInstances);
+    }
+
+    [Fact]
+    public void CrashpadDetection_MatchesCrashpadProcesses_AndIgnoresMonitorSelfSwitchOnMainApp()
+    {
+        Assert.True(ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(
+            "ChatGPT.exe",
+            "\"C:\\Apps\\ChatGPT.exe\" --type=crashpad-handler /prefetch:4 --database=\"C:\\db\""));
+        Assert.True(ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(
+            "claude.exe",
+            "\"claude.exe\" \"--type=crashpad\""));
+        Assert.True(ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(
+            "crashpad_handler.exe",
+            "crashpad_handler.exe --database=test"));
+        Assert.True(ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(
+            "WerFault.exe",
+            null));
+
+        // Main Electron/Chromium or unrelated args mentioning --monitor-self-argument=--type=crashpad-handler must NOT match
+        Assert.False(ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(
+            "ChatGPT.exe",
+            "\"C:\\Apps\\ChatGPT.exe\" --enable-crashpad --monitor-self-argument=--type=crashpad-handler"));
+        Assert.False(ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(
+            "Antigravity.exe",
+            "\"C:\\Apps\\Antigravity.exe\" --type=renderer"));
+    }
+
+    [Fact]
+    public void LiveProcesses_SameExeCrashpadHandler_IsExcludedFromInstanceCount()
+    {
+        if (!File.Exists(Csc64Path))
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "AppProxyCrashpadCountTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string csPath = Path.Combine(tempRoot, "DummySleeper.cs");
+        string exePath = Path.Combine(tempRoot, "DummyCrashpadTest.exe");
+
+        var spawned = new List<Process>();
+        try
+        {
+            File.WriteAllText(csPath, BuildDummySleeperSource(), Encoding.UTF8);
+            CompileWithCsc(csPath, exePath);
+
+            // Simulate orphaned <App>.exe --type=crashpad-handler left after main app closed
+            Process crashpadProc = StartSleeperProcess(exePath, "--type=crashpad-handler --sleep-ms 15000");
+            spawned.Add(crashpadProc);
+            Assert.Equal(0, ProcessInstanceCounter.CountRunningInstances(exePath));
+            Assert.True(ProcessInstanceCounter.CheckCanLaunch(exePath, 1, "DummyCrashpadTest").Allowed);
+
+            // With one normal instance plus one --type=crashpad-handler sibling, count must be 1
+            Process mainProc = StartSleeperProcess(exePath, "--sleep-ms 15000");
+            spawned.Add(mainProc);
+            Assert.Equal(1, ProcessInstanceCounter.CountRunningInstances(exePath));
+        }
+        finally
+        {
+            foreach (var p in spawned)
+            {
+                KillTreeSafe(p);
+            }
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 
     [Fact]

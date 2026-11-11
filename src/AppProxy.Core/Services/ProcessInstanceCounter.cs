@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using AppProxy.UI.Interop;
 
 namespace AppProxy.UI.Services;
 
@@ -246,6 +247,12 @@ public static class ProcessInstanceCounter
                 // fall back to matching by exe file name (already checked above) so elevated
                 // non-proxied instances still count toward the limit.
 
+                string? commandLine = ProcessInspectionHelper.TryGetCommandLine(pid);
+                if (ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(procFileName, commandLine))
+                {
+                    continue;
+                }
+
                 matchingEntries.Add(new RunningProcessEntry(
                     pid,
                     entry.th32ParentProcessID,
@@ -480,7 +487,7 @@ public static class ProcessInstanceCounter
         }
     }
 
-    private static string? TryGetFinalFilePath(string fullPath)
+    internal static string? TryGetFinalFilePath(string fullPath)
     {
         try
         {

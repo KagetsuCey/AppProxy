@@ -2,6 +2,7 @@
 #include "LogProtocol.h"
 
 #include <windows.h>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -77,13 +78,77 @@ void PrintJsonError(const std::string& err) {
     std::printf("{\"ok\":false,\"error\":\"%s\"}\n", AppProxy::IPC::EscapeJsonString(err).c_str());
 }
 
+bool IsConsoleSubsystemPe(const std::wstring& exePath) {
+    HANDLE hFile = CreateFileW(
+        exePath.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    auto readExact = [hFile](LONG offset, void* dst, DWORD bytes) -> bool {
+        LARGE_INTEGER li{};
+        li.QuadPart = offset;
+        if (!SetFilePointerEx(hFile, li, nullptr, FILE_BEGIN)) {
+            return false;
+        }
+        DWORD read = 0;
+        return ReadFile(hFile, dst, bytes, &read, nullptr) && read == bytes;
+    };
+
+    IMAGE_DOS_HEADER dosHdr{};
+    bool isCui = false;
+    if (readExact(0, &dosHdr, sizeof(dosHdr)) &&
+        dosHdr.e_magic == IMAGE_DOS_SIGNATURE &&
+        dosHdr.e_lfanew > 0 &&
+        dosHdr.e_lfanew <= 0x10000000L) {
+        DWORD peSig = 0;
+        IMAGE_FILE_HEADER fileHdr{};
+        if (readExact(dosHdr.e_lfanew, &peSig, sizeof(peSig)) &&
+            peSig == IMAGE_NT_SIGNATURE &&
+            readExact(dosHdr.e_lfanew + static_cast<LONG>(sizeof(DWORD)), &fileHdr, sizeof(fileHdr))) {
+            LONG optOffset = dosHdr.e_lfanew + static_cast<LONG>(sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER));
+            WORD optMagic = 0;
+            if (fileHdr.SizeOfOptionalHeader >= sizeof(WORD) &&
+                readExact(optOffset, &optMagic, sizeof(optMagic))) {
+                if (optMagic == IMAGE_NT_OPTIONAL_HDR32_MAGIC &&
+                    fileHdr.SizeOfOptionalHeader >= offsetof(IMAGE_OPTIONAL_HEADER32, Subsystem) + sizeof(WORD)) {
+                    IMAGE_OPTIONAL_HEADER32 opt32{};
+                    if (readExact(optOffset, &opt32, sizeof(opt32))) {
+                        isCui = (opt32.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI);
+                    }
+                } else if (optMagic == IMAGE_NT_OPTIONAL_HDR64_MAGIC &&
+                           fileHdr.SizeOfOptionalHeader >= offsetof(IMAGE_OPTIONAL_HEADER64, Subsystem) + sizeof(WORD)) {
+                    IMAGE_OPTIONAL_HEADER64 opt64{};
+                    if (readExact(optOffset, &opt64, sizeof(opt64))) {
+                        isCui = (opt64.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI);
+                    }
+                }
+            }
+        }
+    }
+
+    CloseHandle(hFile);
+    return isCui;
+}
+
 bool CreateSuspendedTargetProcess(
     const std::wstring& exePath,
     std::vector<wchar_t>& cmdBuf,
     const std::wstring& workDir,
+    bool detachConsole,
     PROCESS_INFORMATION& outPi,
     DWORD& outError) {
     LPCWSTR dirPtr = workDir.empty() ? nullptr : workDir.c_str();
+    DWORD baseFlags = CREATE_SUSPENDED;
+    if (detachConsole && IsConsoleSubsystemPe(exePath)) {
+        baseFlags |= CREATE_NEW_CONSOLE;
+    }
 
     // Explicitly disable CIG (MicrosoftSignedOnly) and ACG on the target process
     // so Microsoft-signed browsers like msedge.exe allow loading AppProxy.Hook.dll.
@@ -116,7 +181,7 @@ bool CreateSuspendedTargetProcess(
                     nullptr,
                     nullptr,
                     FALSE,
-                    CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+                    baseFlags | EXTENDED_STARTUPINFO_PRESENT,
                     nullptr,
                     dirPtr,
                     &siEx.StartupInfo,
@@ -142,7 +207,7 @@ bool CreateSuspendedTargetProcess(
             nullptr,
             nullptr,
             FALSE,
-            CREATE_SUSPENDED,
+            baseFlags,
             nullptr,
             dirPtr,
             &si,
@@ -160,6 +225,7 @@ int wmain(int argc, wchar_t* argv[]) {
     bool modeLaunch = false;
     bool modeAttach = false;
     bool noResume = false;
+    bool detachConsole = false;
     DWORD targetPid = 0;
     DWORD targetTid = 0;
     std::wstring exePath;
@@ -172,6 +238,7 @@ int wmain(int argc, wchar_t* argv[]) {
         if (a == L"--launch") modeLaunch = true;
         else if (a == L"--attach-suspended") modeAttach = true;
         else if (a == L"--no-resume") noResume = true;
+        else if (a == L"--detach-console") detachConsole = true;
         else if (a == L"--pid" && i + 1 < argc) targetPid = std::wcstoul(argv[++i], nullptr, 10);
         else if (a == L"--tid" && i + 1 < argc) targetTid = std::wcstoul(argv[++i], nullptr, 10);
         else if (a == L"--exe" && i + 1 < argc) exePath = argv[++i];
@@ -243,7 +310,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
         PROCESS_INFORMATION pi{};
         DWORD createErr = 0;
-        if (!CreateSuspendedTargetProcess(exePath, cmdBuf, workDir, pi, createErr)) {
+        if (!CreateSuspendedTargetProcess(exePath, cmdBuf, workDir, detachConsole, pi, createErr)) {
             char buf[128]{};
             std::snprintf(buf, sizeof(buf), "CreateProcessW failed (Win32 error %lu)", createErr);
             PrintJsonError(buf);
@@ -282,6 +349,10 @@ int wmain(int argc, wchar_t* argv[]) {
 
             STARTUPINFOW hsi{};
             hsi.cb = sizeof(hsi);
+            hsi.dwFlags = STARTF_USESTDHANDLES;
+            hsi.hStdInput = INVALID_HANDLE_VALUE;
+            hsi.hStdOutput = INVALID_HANDLE_VALUE;
+            hsi.hStdError = INVALID_HANDLE_VALUE;
             PROCESS_INFORMATION hpi{};
             if (CreateProcessW(helperExe.c_str(), helperCmd, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, selfDir.c_str(), &hsi, &hpi)) {
                 WaitForSingleObject(hpi.hProcess, 10000);

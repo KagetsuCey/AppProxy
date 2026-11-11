@@ -57,53 +57,94 @@ internal sealed class BridgeDaemonHost : IDisposable
 
     private sealed class UiSubscriber : IDisposable
     {
+        private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
         private readonly NamedPipeServerStream _pipe;
-        private readonly StreamWriter _writer;
         private readonly SemaphoreSlim _writeLock = new(1, 1);
+        private readonly CancellationTokenSource _disposeCts = new();
         private int _disposed;
 
         public UiSubscriber(NamedPipeServerStream pipe)
         {
             _pipe = pipe;
-            _writer = new StreamWriter(pipe, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
-            {
-                AutoFlush = true
-            };
         }
 
-        public async Task<bool> TrySendLineAsync(string line, CancellationToken ct)
+        public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+        public async Task<bool> TrySendLineAsync(string line, CancellationToken ct, int timeoutMs = 1500)
         {
-            if (Volatile.Read(ref _disposed) != 0 || !_pipe.IsConnected)
+            if (Volatile.Read(ref _disposed) != 0 || ct.IsCancellationRequested)
             {
                 return false;
             }
 
-            await _writeLock.WaitAsync(ct);
+            bool lockAcquired = false;
             try
             {
+                if (!_pipe.IsConnected)
+                {
+                    Dispose();
+                    return false;
+                }
+
+                using var lockTimerCts = new CancellationTokenSource(timeoutMs);
+                using var linkedLockCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposeCts.Token, lockTimerCts.Token);
+                try
+                {
+                    await _writeLock.WaitAsync(linkedLockCts.Token);
+                    lockAcquired = true;
+                }
+                catch (OperationCanceledException) when (
+                    ct.IsCancellationRequested &&
+                    !lockTimerCts.IsCancellationRequested &&
+                    Volatile.Read(ref _disposed) == 0 &&
+                    _pipe.IsConnected)
+                {
+                    // Caller token (e.g. _telemetryCts) canceled before acquiring lock;
+                    // keep healthy pipe alive for shutdown BridgeExited / Alive=false broadcast.
+                    return false;
+                }
+
                 if (Volatile.Read(ref _disposed) != 0 || !_pipe.IsConnected)
+                {
+                    Dispose();
+                    return false;
+                }
+
+                if (ct.IsCancellationRequested)
                 {
                     return false;
                 }
-                await _writer.WriteLineAsync(line.AsMemory(), ct);
+
+                byte[] payload = Utf8NoBom.GetBytes(line + "\n");
+                using var ioTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_disposeCts.Token);
+                ioTimeoutCts.CancelAfter(timeoutMs);
+
+                await _pipe.WriteAsync(payload, ioTimeoutCts.Token)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromMilliseconds(timeoutMs + 250));
                 return true;
             }
             catch
             {
+                Dispose();
                 return false;
             }
             finally
             {
-                _writeLock.Release();
+                if (lockAcquired)
+                {
+                    _writeLock.Release();
+                }
             }
         }
 
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            try { _writer.Dispose(); } catch { }
+            // Abort blocked pipe I/O immediately. Deliberately avoid disposing _writeLock or _disposeCts,
+            // because .NET SemaphoreSlim.Dispose() while WaitAsync(ct) is pending leaves waiters hung indefinitely.
+            try { _disposeCts.Cancel(); } catch { }
             try { _pipe.Dispose(); } catch { }
-            _writeLock.Dispose();
         }
     }
 
@@ -113,6 +154,7 @@ internal sealed class BridgeDaemonHost : IDisposable
     private readonly LocalProxyBridge _bridge;
     private readonly JobObjectTracker _jobTracker;
     private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _telemetryCts;
 
     private readonly ConcurrentQueue<BridgeEventDto> _recentEvents = new();
     private readonly ConcurrentDictionary<long, ConnectionRecord> _trackedConnections = new();
@@ -127,6 +169,7 @@ internal sealed class BridgeDaemonHost : IDisposable
     {
         _request = request;
         _bridgePid = (uint)Environment.ProcessId;
+        _telemetryCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
         _shm = new SharedMemoryService(_bridgePid);
         _bridge = new LocalProxyBridge(_shm);
         _jobTracker = new JobObjectTracker();
@@ -210,7 +253,7 @@ internal sealed class BridgeDaemonHost : IDisposable
 
         StartNativeLogPipeServer();
         StartUiTelemetryPipeServer();
-        _ = TelemetryTickerLoopAsync(_cts.Token);
+        _ = TelemetryTickerLoopAsync(_telemetryCts.Token);
 
         string effectiveArgs = _request.BuildEffectiveArguments(AppPaths.ResolveBaseDirectory());
         string exeB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(_request.ExePath));
@@ -220,7 +263,7 @@ internal sealed class BridgeDaemonHost : IDisposable
             : _request.WorkingDirectory;
         string workDirB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(workDir));
 
-        var injectorArgs = new StringBuilder($"--launch --exe-b64 {exeB64}");
+        var injectorArgs = new StringBuilder($"--launch --detach-console --exe-b64 {exeB64}");
         if (!string.IsNullOrEmpty(argsB64))
         {
             injectorArgs.Append($" --args-b64 {argsB64}");
@@ -307,6 +350,27 @@ internal sealed class BridgeDaemonHost : IDisposable
 
         _targetPid = result.Pid;
         _jobTracker.TrackPidFallback(_targetPid);
+        _jobTracker.StartTargetExitWatchdog(new JobTargetMonitorOptions
+        {
+            TargetExePath = _request.ExePath,
+            TargetPid = _targetPid,
+            OnJobCleanup = summary =>
+            {
+                if (string.IsNullOrWhiteSpace(summary)) return;
+                RecordAndBroadcastEvent(new ProcessEventRecord
+                {
+                    Timestamp = DateTime.Now,
+                    BridgePid = _bridgePid,
+                    SessionId = sessionId,
+                    Pid = _targetPid,
+                    ParentPid = _bridgePid,
+                    Arch = result.Arch ?? detectedArch,
+                    ProcessName = Path.GetFileName(_request.ExePath),
+                    EventType = "JobCleanup",
+                    Message = $"Target exited; cleaned up lingering job descendant(s): {summary}"
+                });
+            }
+        });
 
         bool warnSingleInstanceHandoff = !_request.IsolateProfileDir && existingInstances > 0;
         string launchMsg = proxyProfile is not null
@@ -348,9 +412,13 @@ internal sealed class BridgeDaemonHost : IDisposable
         await BroadcastStatusAsync(alive: true);
 
         // Block until the entire target process tree (root + all children in the Job Object) exits
+        // or the exit watchdog confirms the target application has closed leaving only orphans.
         await _jobTracker.AllProcessesExited;
 
-        RecordAndBroadcastEvent(new ProcessEventRecord
+        // Cancel background telemetry & pipe acceptors immediately so alive=true cannot race shutdown.
+        _telemetryCts.Cancel();
+
+        var exitedEvent = new ProcessEventRecord
         {
             Timestamp = DateTime.Now,
             BridgePid = _bridgePid,
@@ -361,10 +429,39 @@ internal sealed class BridgeDaemonHost : IDisposable
             ProcessName = Path.GetFileName(_request.ExePath),
             EventType = "BridgeExited",
             Message = $"Target process tree exited; releasing background bridge #{_bridgePid}"
-        });
+        };
+        var exitedDto = BridgeEventDto.FromRecord(exitedEvent);
+        _recentEvents.Enqueue(exitedDto);
+        while (_recentEvents.Count > 500)
+        {
+            _recentEvents.TryDequeue(out _);
+        }
 
-        await BroadcastStatusAsync(alive: false);
-        await Task.Delay(250);
+        if (!_uiSubscribers.IsEmpty)
+        {
+            using var shutdownEventCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            string exitEventLine = BridgeIpcCodec.SerializeLine(new UiBridgeEnvelope
+            {
+                Type = "event",
+                BridgePid = _bridgePid,
+                Event = exitedDto
+            });
+            await BroadcastLineToUiSubscribersAsync(exitEventLine, shutdownEventCts.Token, timeoutMs: 250);
+
+            if (!_uiSubscribers.IsEmpty)
+            {
+                using var shutdownStatusCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+                await BroadcastStatusAsync(alive: false, shutdownStatusCts.Token, timeoutMs: 250);
+            }
+
+            try
+            {
+                await Task.Delay(100, CancellationToken.None);
+            }
+            catch
+            {
+            }
+        }
         return 0;
     }
 
@@ -410,10 +507,10 @@ internal sealed class BridgeDaemonHost : IDisposable
                         continue;
                     }
 
-                    await BroadcastConnectionAsync(rec);
+                    await BroadcastConnectionAsync(rec, ct);
                 }
 
-                await BroadcastStatusAsync(alive: true);
+                await BroadcastStatusAsync(alive: true, ct);
             }
         }
         catch (OperationCanceledException)
@@ -430,7 +527,7 @@ internal sealed class BridgeDaemonHost : IDisposable
             _recentEvents.TryDequeue(out _);
         }
 
-        if (_uiSubscribers.IsEmpty) return;
+        if (_uiSubscribers.IsEmpty || _telemetryCts.IsCancellationRequested) return;
 
         string line = BridgeIpcCodec.SerializeLine(new UiBridgeEnvelope
         {
@@ -438,13 +535,13 @@ internal sealed class BridgeDaemonHost : IDisposable
             BridgePid = _bridgePid,
             Event = dto
         });
-        _ = BroadcastLineToUiSubscribersAsync(line);
+        _ = BroadcastLineToUiSubscribersAsync(line, _telemetryCts.Token);
     }
 
-    private Task BroadcastConnectionAsync(ConnectionRecord record)
+    private Task BroadcastConnectionAsync(ConnectionRecord record, CancellationToken ct = default)
     {
         _lastBroadcastConnState[record.Id] = (record.RawStatus, record.RawBytesUp, record.RawBytesDown);
-        if (_uiSubscribers.IsEmpty) return Task.CompletedTask;
+        if (_uiSubscribers.IsEmpty || ct.IsCancellationRequested) return Task.CompletedTask;
 
         string line = BridgeIpcCodec.SerializeLine(new UiBridgeEnvelope
         {
@@ -452,12 +549,12 @@ internal sealed class BridgeDaemonHost : IDisposable
             BridgePid = _bridgePid,
             Connection = BridgeConnectionDto.FromRecord(record)
         });
-        return BroadcastLineToUiSubscribersAsync(line);
+        return BroadcastLineToUiSubscribersAsync(line, ct);
     }
 
-    private Task BroadcastStatusAsync(bool alive)
+    private Task BroadcastStatusAsync(bool alive, CancellationToken ct = default, int timeoutMs = 1500)
     {
-        if (_uiSubscribers.IsEmpty) return Task.CompletedTask;
+        if (_uiSubscribers.IsEmpty || ct.IsCancellationRequested) return Task.CompletedTask;
 
         string line = BridgeIpcCodec.SerializeLine(new UiBridgeEnvelope
         {
@@ -465,7 +562,7 @@ internal sealed class BridgeDaemonHost : IDisposable
             BridgePid = _bridgePid,
             Status = BuildStatusDto(alive)
         });
-        return BroadcastLineToUiSubscribersAsync(line);
+        return BroadcastLineToUiSubscribersAsync(line, ct, timeoutMs);
     }
 
     private BridgeStatusDto BuildStatusDto(bool alive) => new()
@@ -479,24 +576,50 @@ internal sealed class BridgeDaemonHost : IDisposable
         Alive = alive
     };
 
-    private async Task BroadcastLineToUiSubscribersAsync(string line)
+    private async Task BroadcastLineToUiSubscribersAsync(string line, CancellationToken ct = default, int timeoutMs = 1500)
     {
-        foreach (var kv in _uiSubscribers)
+        if (_uiSubscribers.IsEmpty || ct.IsCancellationRequested) return;
+
+        var snapshot = _uiSubscribers.ToArray();
+        if (snapshot.Length == 1)
         {
-            bool ok = await kv.Value.TrySendLineAsync(line, CancellationToken.None);
-            if (!ok && _uiSubscribers.TryRemove(kv.Key, out var removed))
+            var (id, sub) = snapshot[0];
+            bool ok = await sub.TrySendLineAsync(line, ct, timeoutMs);
+            if (!ok && (sub.IsDisposed || !ct.IsCancellationRequested) &&
+                _uiSubscribers.TryRemove(id, out var removed))
             {
                 removed.Dispose();
             }
+            return;
+        }
+
+        var tasks = new Task[snapshot.Length];
+        for (int i = 0; i < snapshot.Length; i++)
+        {
+            int id = snapshot[i].Key;
+            UiSubscriber sub = snapshot[i].Value;
+            tasks[i] = SendToSubscriberAsync(id, sub, line, ct, timeoutMs);
+        }
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task SendToSubscriberAsync(int id, UiSubscriber sub, string line, CancellationToken ct, int timeoutMs)
+    {
+        bool ok = await sub.TrySendLineAsync(line, ct, timeoutMs);
+        if (!ok && (sub.IsDisposed || !ct.IsCancellationRequested) &&
+            _uiSubscribers.TryRemove(id, out var removed))
+        {
+            removed.Dispose();
         }
     }
 
     private void StartUiTelemetryPipeServer()
     {
         string pipeName = BridgeIpcCodec.GetUiPipeName(_bridgePid);
+        CancellationToken ct = _telemetryCts.Token;
         _ = Task.Run(async () =>
         {
-            while (!_cts.IsCancellationRequested)
+            while (!ct.IsCancellationRequested)
             {
                 NamedPipeServerStream? server = null;
                 try
@@ -508,13 +631,13 @@ internal sealed class BridgeDaemonHost : IDisposable
                         PipeTransmissionMode.Byte,
                         PipeOptions.Asynchronous);
 
-                    await server.WaitForConnectionAsync(_cts.Token);
+                    await server.WaitForConnectionAsync(ct);
                     var sub = new UiSubscriber(server);
                     server = null;
 
                     int id = Interlocked.Increment(ref _nextSubscriberId);
                     _uiSubscribers[id] = sub;
-                    _ = SendInitialSnapshotAsync(id, sub);
+                    _ = SendInitialSnapshotAsync(id, sub, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -524,13 +647,20 @@ internal sealed class BridgeDaemonHost : IDisposable
                 catch
                 {
                     server?.Dispose();
-                    await Task.Delay(100, _cts.Token);
+                    try
+                    {
+                        await Task.Delay(100, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
                 }
             }
         });
     }
 
-    private async Task SendInitialSnapshotAsync(int subscriberId, UiSubscriber sub)
+    private async Task SendInitialSnapshotAsync(int subscriberId, UiSubscriber sub, CancellationToken ct)
     {
         try
         {
@@ -540,54 +670,69 @@ internal sealed class BridgeDaemonHost : IDisposable
                 BridgePid = _bridgePid,
                 Status = BuildStatusDto(alive: true)
             });
-            if (!await sub.TrySendLineAsync(statusLine, CancellationToken.None))
+            if (!await sub.TrySendLineAsync(statusLine, ct))
             {
-                if (_uiSubscribers.TryRemove(subscriberId, out var rem)) rem.Dispose();
+                if ((sub.IsDisposed || !ct.IsCancellationRequested) && _uiSubscribers.TryRemove(subscriberId, out var rem))
+                {
+                    rem.Dispose();
+                }
                 return;
             }
 
             foreach (var ev in _recentEvents.ToArray())
             {
+                if (ct.IsCancellationRequested) break;
                 string evLine = BridgeIpcCodec.SerializeLine(new UiBridgeEnvelope
                 {
                     Type = "event",
                     BridgePid = _bridgePid,
                     Event = ev
                 });
-                if (!await sub.TrySendLineAsync(evLine, CancellationToken.None))
+                if (!await sub.TrySendLineAsync(evLine, ct))
                 {
-                    if (_uiSubscribers.TryRemove(subscriberId, out var rem)) rem.Dispose();
+                    if ((sub.IsDisposed || !ct.IsCancellationRequested) && _uiSubscribers.TryRemove(subscriberId, out var rem))
+                    {
+                        rem.Dispose();
+                    }
                     return;
                 }
             }
 
             foreach (var conn in _trackedConnections.Values.OrderBy(c => c.Id))
             {
+                if (ct.IsCancellationRequested) break;
                 string connLine = BridgeIpcCodec.SerializeLine(new UiBridgeEnvelope
                 {
                     Type = "conn",
                     BridgePid = _bridgePid,
                     Connection = BridgeConnectionDto.FromRecord(conn)
                 });
-                if (!await sub.TrySendLineAsync(connLine, CancellationToken.None))
+                if (!await sub.TrySendLineAsync(connLine, ct))
                 {
-                    if (_uiSubscribers.TryRemove(subscriberId, out var rem)) rem.Dispose();
+                    if ((sub.IsDisposed || !ct.IsCancellationRequested) && _uiSubscribers.TryRemove(subscriberId, out var rem))
+                    {
+                        rem.Dispose();
+                    }
                     return;
                 }
             }
         }
         catch
         {
-            if (_uiSubscribers.TryRemove(subscriberId, out var rem)) rem.Dispose();
+            if ((sub.IsDisposed || !ct.IsCancellationRequested) && _uiSubscribers.TryRemove(subscriberId, out var rem))
+            {
+                rem.Dispose();
+            }
         }
     }
 
     private void StartNativeLogPipeServer()
     {
         string pipeName = $"AppProxy_Log_{_bridgePid}";
+        CancellationToken ct = _telemetryCts.Token;
         _ = Task.Run(async () =>
         {
-            while (!_cts.IsCancellationRequested)
+            while (!ct.IsCancellationRequested)
             {
                 NamedPipeServerStream? server = null;
                 try
@@ -599,10 +744,10 @@ internal sealed class BridgeDaemonHost : IDisposable
                         PipeTransmissionMode.Byte,
                         PipeOptions.Asynchronous);
 
-                    await server.WaitForConnectionAsync(_cts.Token);
+                    await server.WaitForConnectionAsync(ct);
                     var connectedPipe = server;
                     server = null;
-                    _ = Task.Run(() => ReadNativeLogClientAsync(connectedPipe, _cts.Token), _cts.Token);
+                    _ = Task.Run(() => ReadNativeLogClientAsync(connectedPipe, ct), ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -612,7 +757,14 @@ internal sealed class BridgeDaemonHost : IDisposable
                 catch
                 {
                     server?.Dispose();
-                    await Task.Delay(100, _cts.Token);
+                    try
+                    {
+                        await Task.Delay(100, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
                 }
             }
         });
@@ -698,7 +850,8 @@ internal sealed class BridgeDaemonHost : IDisposable
         try
         {
             using var target = Process.GetProcessById((int)pid);
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(_telemetryCts.Token);
+            cts.CancelAfter(TimeSpan.FromSeconds(2));
             await target.WaitForExitAsync(cts.Token);
 
             string hint = hadExisting
@@ -803,6 +956,7 @@ internal sealed class BridgeDaemonHost : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts.Cancel();
+        _telemetryCts.Cancel();
 
         foreach (var kv in _uiSubscribers)
         {
@@ -815,6 +969,7 @@ internal sealed class BridgeDaemonHost : IDisposable
         _bridge.Dispose();
         _shm.Dispose();
         _jobTracker.Dispose();
+        _telemetryCts.Dispose();
         _cts.Dispose();
     }
 }
