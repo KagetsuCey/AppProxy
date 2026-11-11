@@ -2,5 +2,15 @@
   <PropertyGroup>
     <AppProxyRoot>$(MSBuildThisFileDirectory)</AppProxyRoot>
     <AppProxyArtifactsDir>$(AppProxyRoot)artifacts\</AppProxyArtifactsDir>
+    <AppProxyVersion Condition="'$(AppProxyVersion)' == ''">1.0.0</AppProxyVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <Version>$(AppProxyVersion)</Version>
+    <AssemblyVersion>$(AppProxyVersion).0</AssemblyVersion>
+    <FileVersion>$(AppProxyVersion).0</FileVersion>
+    <Product>AppProxy</Product>
+    <Company>AppProxy</Company>
+    <Authors>AppProxy</Authors>
   </PropertyGroup>
 </Project>

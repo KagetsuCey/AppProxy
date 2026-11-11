@@ -34,8 +34,8 @@ public sealed class AppLauncherService : IDisposable
             return (false, 0, $"Executable not found: {app.ExePath}");
         }
 
-        string baseDir = AppContext.BaseDirectory;
-        string bridgeExePath = Path.Combine(baseDir, "AppProxy.Bridge.exe");
+        string baseDir = AppPaths.ResolveBaseDirectory();
+        string bridgeExePath = AppPaths.GetBridgeExePath(baseDir);
         if (!File.Exists(bridgeExePath))
         {
             return (false, 0, $"Background bridge executable missing at {bridgeExePath}. Please build AppProxy.Bridge.");

@@ -148,8 +148,7 @@ internal sealed class BridgeDaemonHost : IDisposable
             return 1;
         }
 
-        string baseDir = AppContext.BaseDirectory;
-        string nativeDir = Path.Combine(baseDir, "native");
+        string nativeDir = AppPaths.GetNativeDirectory();
         string detectedArch = DetectPeArchitecture(_request.ExePath);
         string injectorName = detectedArch == "x86" ? "AppProxy.Injector.x86.exe" : "AppProxy.Injector.x64.exe";
         string injectorPath = Path.Combine(nativeDir, injectorName);
@@ -200,7 +199,7 @@ internal sealed class BridgeDaemonHost : IDisposable
         StartUiTelemetryPipeServer();
         _ = TelemetryTickerLoopAsync(_cts.Token);
 
-        string effectiveArgs = _request.BuildEffectiveArguments(AppContext.BaseDirectory);
+        string effectiveArgs = _request.BuildEffectiveArguments(AppPaths.ResolveBaseDirectory());
         string exeB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(_request.ExePath));
         string argsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(effectiveArgs));
         string workDir = string.IsNullOrWhiteSpace(_request.WorkingDirectory)

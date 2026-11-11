@@ -120,29 +120,20 @@ public partial class App : Application
     private static string? TryWriteCrashLog(Exception ex)
     {
         string content = $"[{DateTimeOffset.Now:O}] Unhandled Exception{Environment.NewLine}{ex}{Environment.NewLine}{new string('-', 60)}{Environment.NewLine}";
-        string[] candidates =
+        string path = AppPaths.GetCrashLogFilePath(AppPaths.UiCrashLogFileName);
+        try
         {
-            Path.Combine(AppContext.BaseDirectory, "AppProxy.UI.crash.log"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AppProxy", "AppProxy.UI.crash.log")
-        };
-
-        foreach (string path in candidates)
-        {
-            try
+            string? dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
             {
-                string? dir = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                File.AppendAllText(path, content);
-                return path;
+                Directory.CreateDirectory(dir);
             }
-            catch
-            {
-            }
+            File.AppendAllText(path, content);
+            return path;
         }
-
-        return null;
+        catch
+        {
+            return null;
+        }
     }
 }

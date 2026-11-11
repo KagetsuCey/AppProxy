@@ -276,10 +276,8 @@ public static class ShortcutResolver
         }
         Directory.CreateDirectory(desktopDir);
 
-        string baseDir = !string.IsNullOrWhiteSpace(customBaseDir)
-            ? customBaseDir
-            : AppContext.BaseDirectory;
-        string bridgeExePath = Path.Combine(baseDir, "AppProxy.Bridge.exe");
+        string baseDir = AppPaths.ResolveBaseDirectory(customBaseDir);
+        string bridgeExePath = AppPaths.GetBridgeExePath(baseDir);
 
         string rawName = !string.IsNullOrWhiteSpace(app.Name)
             ? app.Name

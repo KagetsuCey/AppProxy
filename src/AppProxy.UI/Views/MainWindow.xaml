@@ -1365,18 +1365,24 @@
                                             <ui:SymbolIcon Symbol="FolderOpen24" FontSize="19" Foreground="{DynamicResource SemanticTealBrush}" />
                                         </Border>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="便携配置文件位置" FontSize="15" FontWeight="SemiBold" />
-                                            <TextBlock Text="所有代理节点、应用配置与界面设置均保存在程序同级目录的 config.json 中"
+                                            <TextBlock Text="应用数据与配置文件位置" FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Text="配置 (config.json)、隔离浏览器环境 (profiles\) 与日志 (logs\) 均保存在程序相对目录 data\ 下"
                                                        FontSize="12"
                                                        Margin="0,2,0,0"
+                                                       TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
-                                        <ui:Button Grid.Column="2"
-                                                   Content="复制路径"
-                                                   Icon="{ui:SymbolIcon Copy24}"
-                                                   Appearance="Secondary"
-                                                   VerticalAlignment="Center"
-                                                   Command="{Binding CopyConfigFilePathCommand}" />
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <ui:Button Content="打开数据目录"
+                                                       Icon="{ui:SymbolIcon FolderOpen24}"
+                                                       Appearance="Secondary"
+                                                       Margin="0,0,8,0"
+                                                       Command="{Binding OpenDataDirectoryCommand}" />
+                                            <ui:Button Content="复制路径"
+                                                       Icon="{ui:SymbolIcon Copy24}"
+                                                       Appearance="Secondary"
+                                                       Command="{Binding CopyConfigFilePathCommand}" />
+                                        </StackPanel>
                                     </Grid>
 
                                     <Border Margin="52,10,0,0"
@@ -1385,10 +1391,18 @@
                                             BorderThickness="1"
                                             BorderBrush="{DynamicResource SubtleDividerBrush}"
                                             Background="{DynamicResource IconContainerBgBrush}">
-                                        <TextBlock Text="{Binding ConfigFilePath}"
-                                                   FontSize="12"
-                                                   FontFamily="Consolas"
-                                                   TextWrapping="Wrap" />
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ConfigFilePath}"
+                                                       FontSize="12"
+                                                       FontFamily="Consolas"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding DataDirectoryPath, StringFormat='数据根目录: {0}'}"
+                                                       FontSize="11.5"
+                                                       FontFamily="Consolas"
+                                                       Margin="0,4,0,0"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
                                     </Border>
                                 </StackPanel>
                             </Border>

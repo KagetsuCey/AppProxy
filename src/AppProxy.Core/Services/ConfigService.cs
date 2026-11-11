@@ -22,7 +22,7 @@ public sealed class ConfigService
     {
         _configPath = !string.IsNullOrWhiteSpace(customPath)
             ? customPath
-            : Path.Combine(AppContext.BaseDirectory, "config.json");
+            : AppPaths.GetConfigFilePath();
     }
 
     public AppConfig Load()

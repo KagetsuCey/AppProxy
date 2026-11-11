@@ -44,26 +44,9 @@ public sealed class BridgeLaunchRequest
             return rawArgs;
         }
 
-        string seedName = !string.IsNullOrWhiteSpace(AppName)
-            ? AppName
-            : Path.GetFileNameWithoutExtension(ExePath);
-        string safeFolder = SanitizeDirectoryName(seedName);
-        string profileDir = Path.Combine(baseDir, "profiles", safeFolder);
+        string profileDir = AppPaths.GetAppProfileDirectory(AppName, ExePath, baseDir);
         string userDataArg = $"--user-data-dir=\"{profileDir}\"";
         return string.IsNullOrEmpty(rawArgs) ? userDataArg : $"{rawArgs} {userDataArg}";
-    }
-
-    private static string SanitizeDirectoryName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return "DefaultApp";
-        char[] invalid = Path.GetInvalidFileNameChars();
-        var sb = new StringBuilder(name.Length);
-        foreach (char c in name.Trim())
-        {
-            sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
-        }
-        string cleaned = sb.ToString().Trim('.', ' ');
-        return string.IsNullOrEmpty(cleaned) ? "DefaultApp" : cleaned;
     }
 }
 

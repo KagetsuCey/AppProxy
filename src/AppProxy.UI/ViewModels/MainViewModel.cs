@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Data;
@@ -33,6 +34,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public ICollectionView FilteredConnections { get; }
 
     public string ConfigFilePath => _configService.ConfigPath;
+    public string DataDirectoryPath => AppPaths.GetDataDirectory();
 
     [ObservableProperty]
     private int _selectedNavIndex;
@@ -460,6 +462,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
         catch
         {
             StatusMessage = "复制配置文件路径失败";
+        }
+    }
+
+    [RelayCommand]
+    private void OpenDataDirectory()
+    {
+        try
+        {
+            string dataDir = AppPaths.EnsureDataDirectoryExists();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{dataDir}\"",
+                UseShellExecute = true
+            });
+            StatusMessage = $"已打开数据目录: {dataDir}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"打开数据目录失败: {ex.Message}";
         }
     }
 

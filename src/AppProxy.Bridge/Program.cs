@@ -51,7 +51,7 @@ internal static class Program
                 if (app is null)
                 {
                     ReportError(
-                        $"未在 config.json 中找到对应的应用配置（ID: {appId:D}）。\n请打开 AppProxy 重新为该应用创建桌面快捷方式。",
+                        $"未在配置文件 ({configService.ConfigPath}) 中找到对应的应用配置（ID: {appId:D}）。\n请打开 AppProxy 重新为该应用创建桌面快捷方式。",
                         directShortcutMode);
                     return 2;
                 }
@@ -106,8 +106,27 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            TryWriteCrashLog(ex);
             ReportError($"Bridge startup error: {ex.Message}", directShortcutMode);
             return 1;
+        }
+    }
+
+    private static void TryWriteCrashLog(Exception ex)
+    {
+        try
+        {
+            string path = AppPaths.GetCrashLogFilePath(AppPaths.BridgeCrashLogFileName);
+            string? dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            string content = $"[{DateTimeOffset.Now:O}] Bridge Startup Exception{Environment.NewLine}{ex}{Environment.NewLine}{new string('-', 60)}{Environment.NewLine}";
+            File.AppendAllText(path, content);
+        }
+        catch
+        {
         }
     }
 

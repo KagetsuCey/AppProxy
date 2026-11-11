@@ -8,11 +8,52 @@ namespace AppProxy.Tests;
 public class ConfigServiceTests
 {
     [Fact]
-    public void DefaultConstructor_UsesExecutableSiblingConfigJson()
+    public void DefaultConstructor_UsesAppRelativeDataConfigJson()
     {
         var service = new ConfigService();
-        string expected = Path.Combine(AppContext.BaseDirectory, "config.json");
+        string expected = Path.Combine(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory)),
+            "data",
+            "config.json");
         Assert.Equal(expected, service.ConfigPath);
+    }
+
+    [Fact]
+    public void Load_IgnoresLegacyRootConfigJson_InParentBaseDirectory()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "AppProxyLegacyIgnoreTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            string legacyConfigPath = Path.Combine(tempDir, "config.json");
+            File.WriteAllText(legacyConfigPath, """
+                {
+                  "IsDarkTheme": false,
+                  "TestProbeHost": "legacy.example.com",
+                  "TestProbePort": 8443,
+                  "Proxies": [],
+                  "Apps": []
+                }
+                """);
+
+            string newConfigPath = AppPaths.GetConfigFilePath(tempDir);
+            var service = new ConfigService(newConfigPath);
+            AppConfig loaded = service.Load();
+
+            Assert.True(loaded.IsDarkTheme);
+            Assert.Equal("www.gstatic.com", loaded.TestProbeHost);
+            Assert.Equal(80, loaded.TestProbePort);
+            Assert.NotEmpty(loaded.Proxies);
+            Assert.False(File.Exists(newConfigPath));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
     }
 
     [Fact]

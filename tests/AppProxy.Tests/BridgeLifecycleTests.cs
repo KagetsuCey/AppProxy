@@ -127,7 +127,7 @@ public class BridgeLifecycleTests
 
         string effective = req.BuildEffectiveArguments(@"D:\Apps\AppProxy");
         Assert.Contains("--no-first-run", effective);
-        Assert.Contains(@"--user-data-dir=""D:\Apps\AppProxy\profiles\Microsoft Edge""", effective);
+        Assert.Contains(@"--user-data-dir=""D:\Apps\AppProxy\data\profiles\Microsoft Edge""", effective);
 
         // Must not duplicate --user-data-dir if user already supplied one
         req.Arguments = @"--user-data-dir=""D:\CustomEdgeProfile""";

@@ -44,7 +44,23 @@
     <Copy SourceFiles="@(NativeArtifacts)" DestinationFolder="$(NativeOutDir)" SkipUnchangedFiles="true" Condition="'@(NativeArtifacts)' != ''" />
   </Target>
 
-  <Target Name="BuildAndCopyBridgeBinaries" AfterTargets="Build">
+  <Target Name="CopyNativeBinariesOnPublish" AfterTargets="Publish">
+    <PropertyGroup>
+      <PublishNativeOutDir>$(PublishDir)native\</PublishNativeOutDir>
+      <NativeBinX64>$(MSBuildThisFileDirectory)..\..\artifacts\bin\x64\$(Configuration)\</NativeBinX64>
+      <NativeBinX86>$(MSBuildThisFileDirectory)..\..\artifacts\bin\Win32\$(Configuration)\</NativeBinX86>
+    </PropertyGroup>
+    <MakeDir Directories="$(PublishNativeOutDir)" />
+    <ItemGroup>
+      <PublishNativeArtifacts Include="$(NativeBinX64)AppProxy.Hook.x64.dll" Condition="Exists('$(NativeBinX64)AppProxy.Hook.x64.dll')" />
+      <PublishNativeArtifacts Include="$(NativeBinX64)AppProxy.Injector.x64.exe" Condition="Exists('$(NativeBinX64)AppProxy.Injector.x64.exe')" />
+      <PublishNativeArtifacts Include="$(NativeBinX86)AppProxy.Hook.x86.dll" Condition="Exists('$(NativeBinX86)AppProxy.Hook.x86.dll')" />
+      <PublishNativeArtifacts Include="$(NativeBinX86)AppProxy.Injector.x86.exe" Condition="Exists('$(NativeBinX86)AppProxy.Injector.x86.exe')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishNativeArtifacts)" DestinationFolder="$(PublishNativeOutDir)" SkipUnchangedFiles="true" Condition="'@(PublishNativeArtifacts)' != ''" />
+  </Target>
+
+  <Target Name="BuildAndCopyBridgeBinaries" AfterTargets="Build" Condition="'$(SkipCopyBridgeOnBuild)' != 'true'">
     <PropertyGroup>
       <BridgeProject>$(MSBuildThisFileDirectory)..\AppProxy.Bridge\AppProxy.Bridge.csproj</BridgeProject>
       <BridgeBinDir>$(MSBuildThisFileDirectory)..\AppProxy.Bridge\bin\$(Configuration)\$(TargetFramework)\</BridgeBinDir>
