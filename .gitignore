@@ -15,6 +15,7 @@ Win32/
 Debug/
 Release/
 out/
+tools/
 # Downloaded third-party sources (auto-fetched by MSBuild)
 third_party/minhook/
 third_party/*.zip
