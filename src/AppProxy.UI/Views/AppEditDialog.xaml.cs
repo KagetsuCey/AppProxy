@@ -38,6 +38,7 @@ public partial class AppEditDialog : FluentWindow
         RemoteDnsToggle.IsChecked = ResultApp.RemoteDns;
         BypassLanToggle.IsChecked = ResultApp.BypassLan;
         InjectChildrenToggle.IsChecked = ResultApp.InjectChildren;
+        IgnoreSystemProxyToggle.IsChecked = ResultApp.IgnoreSystemProxy;
         IsolateProfileToggle.IsChecked = ResultApp.GetEffectiveIsolateProfileDir();
     }
 
@@ -107,6 +108,7 @@ public partial class AppEditDialog : FluentWindow
         ResultApp.RemoteDns = RemoteDnsToggle.IsChecked == true;
         ResultApp.BypassLan = BypassLanToggle.IsChecked == true;
         ResultApp.InjectChildren = InjectChildrenToggle.IsChecked == true;
+        ResultApp.IgnoreSystemProxy = IgnoreSystemProxyToggle.IsChecked == true;
         ResultApp.IsolateProfileDir = IsolateProfileToggle.IsChecked == true;
 
         DialogResult = true;

@@ -47,6 +47,9 @@ public partial class AppProfile : ObservableObject
     private bool _injectChildren = true;
 
     [ObservableProperty]
+    private bool _ignoreSystemProxy = true;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(EffectiveIsolateProfileDir))]
     private bool? _isolateProfileDir;
 
@@ -88,6 +91,7 @@ public partial class AppProfile : ObservableObject
         RemoteDns = RemoteDns,
         BypassLan = BypassLan,
         InjectChildren = InjectChildren,
+        IgnoreSystemProxy = IgnoreSystemProxy,
         IsolateProfileDir = IsolateProfileDir,
         DetectedArch = DetectedArch,
         Icon = Icon,

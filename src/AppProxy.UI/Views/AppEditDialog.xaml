@@ -4,7 +4,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="配置应用"
                  Width="560"
-                 Height="660"
+                 Height="720"
                  ResizeMode="NoResize"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
@@ -149,6 +149,19 @@
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="IsolateProfileToggle" HorizontalAlignment="Right" VerticalAlignment="Center" Click="OnIsolateProfileClick" />
+                        </Grid>
+
+                        <Border Height="1" Margin="0,10,0,10" Background="{DynamicResource SubtleDividerBrush}" />
+
+                        <Grid>
+                            <StackPanel Margin="0,0,64,0">
+                                <TextBlock Text="忽略系统代理 (v2rayN / Clash 等)" FontWeight="SemiBold" />
+                                <TextBlock Text="屏蔽 Windows 系统代理与 HTTP_PROXY 等环境变量，确保优先使用 AppProxy 绑定节点"
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="IgnoreSystemProxyToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
                     </StackPanel>
                 </Border>

@@ -245,7 +245,8 @@ public sealed class JobObjectTracker : IDisposable
         string arguments,
         string workingDirectory,
         IReadOnlyDictionary<string, string> extraEnv,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IEnumerable<string>? removeEnvKeys = null)
     {
         var sa = new SECURITY_ATTRIBUTES
         {
@@ -284,7 +285,7 @@ public sealed class JobObjectTracker : IDisposable
                 cmdLine.Append(' ').Append(arguments);
             }
 
-            IntPtr envBlock = BuildUnicodeEnvironmentBlock(extraEnv);
+            IntPtr envBlock = BuildUnicodeEnvironmentBlock(extraEnv, removeEnvKeys);
             PROCESS_INFORMATION pi;
             try
             {
@@ -419,7 +420,9 @@ public sealed class JobObjectTracker : IDisposable
         }
     }
 
-    private static IntPtr BuildUnicodeEnvironmentBlock(IReadOnlyDictionary<string, string> extraEnv)
+    private static IntPtr BuildUnicodeEnvironmentBlock(
+        IReadOnlyDictionary<string, string> extraEnv,
+        IEnumerable<string>? removeEnvKeys = null)
     {
         var merged = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
@@ -427,6 +430,16 @@ public sealed class JobObjectTracker : IDisposable
             if (entry.Key is string k && entry.Value is string v)
             {
                 merged[k] = v;
+            }
+        }
+        if (removeEnvKeys is not null)
+        {
+            foreach (string key in removeEnvKeys)
+            {
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    merged.Remove(key);
+                }
             }
         }
         foreach (var kv in extraEnv)

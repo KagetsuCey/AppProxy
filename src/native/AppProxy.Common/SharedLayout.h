@@ -14,11 +14,12 @@ constexpr uint32_t kFakeIpBase       = 0xC6120001u; // 198.18.0.1 in host byte o
 constexpr uint32_t kFakeIpMaskPrefix = 0xC6120000u; // 198.18.0.0/15 mask = 0xFFFE0000
 
 enum SessionFlags : uint32_t {
-    FLAG_NONE            = 0,
-    FLAG_REMOTE_DNS      = 1u << 0,
-    FLAG_BYPASS_LAN      = 1u << 1,
-    FLAG_INJECT_CHILDREN = 1u << 2,
-    FLAG_DIRECT_MODE     = 1u << 3,
+    FLAG_NONE                = 0,
+    FLAG_REMOTE_DNS          = 1u << 0,
+    FLAG_BYPASS_LAN          = 1u << 1,
+    FLAG_INJECT_CHILDREN     = 1u << 2,
+    FLAG_DIRECT_MODE         = 1u << 3,
+    FLAG_IGNORE_SYSTEM_PROXY = 1u << 4,
 };
 
 enum TargetAddrType : uint8_t {

@@ -29,6 +29,9 @@ public sealed class BridgeLaunchRequest
     [JsonPropertyName("injectChildren")]
     public bool InjectChildren { get; set; } = true;
 
+    [JsonPropertyName("ignoreSystemProxy")]
+    public bool IgnoreSystemProxy { get; set; } = true;
+
     [JsonPropertyName("isolateProfileDir")]
     public bool IsolateProfileDir { get; set; }
 

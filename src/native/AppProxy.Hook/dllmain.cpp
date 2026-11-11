@@ -83,15 +83,25 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ulReasonForCall, LPVOID lpReserved)
         DisableThreadLibraryCalls(hModule);
         InitializeRuntimeConfig(hModule);
 
+        if (ShouldIgnoreSystemProxy()) {
+            SanitizeProcessProxyEnv();
+        }
+
         if (MH_Initialize() == MH_OK) {
             InstallProcessHooks();
+            if (ShouldIgnoreSystemProxy()) {
+                InstallRegistryHooks();
+            }
             TryInstallLateHooks(false);
             MH_EnableHook(MH_ALL_HOOKS);
 
             if (g_config.bridgePid != 0) {
-                SharedBridgeClient::EmitLogEvent(
-                    "Injected",
-                    "Hook DLL attached (" + std::string(CurrentArchString()) + ")");
+                std::string detail = "Hook DLL attached (" + std::string(CurrentArchString());
+                if (ShouldIgnoreSystemProxy()) {
+                    detail += ", system-proxy-isolated";
+                }
+                detail += ")";
+                SharedBridgeClient::EmitLogEvent("Injected", detail);
             }
         }
     } else if (ulReasonForCall == DLL_PROCESS_DETACH) {

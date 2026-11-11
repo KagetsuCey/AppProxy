@@ -52,6 +52,7 @@ public sealed class AppLauncherService : IDisposable
             RemoteDns = app.RemoteDns,
             BypassLan = app.BypassLan,
             InjectChildren = app.InjectChildren,
+            IgnoreSystemProxy = app.IgnoreSystemProxy,
             IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
             Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
         };

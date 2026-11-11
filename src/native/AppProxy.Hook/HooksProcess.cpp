@@ -32,11 +32,17 @@ FnLoadLibraryW g_TrueLoadLibraryW = nullptr;
 FnLoadLibraryExW g_TrueLoadLibraryExW = nullptr;
 FnLoadLibraryA g_TrueLoadLibraryA = nullptr;
 FnLoadLibraryExA g_TrueLoadLibraryExA = nullptr;
+FnLoadLibraryW g_TrueKbLoadLibraryW = nullptr;
+FnLoadLibraryExW g_TrueKbLoadLibraryExW = nullptr;
+FnLoadLibraryA g_TrueKbLoadLibraryA = nullptr;
+FnLoadLibraryExA g_TrueKbLoadLibraryExA = nullptr;
 
 std::mutex g_lateHookMutex;
 std::atomic<bool> g_netHooksReady{false};
 std::atomic<bool> g_dnsHooksReady{false};
 std::atomic<bool> g_advapiHooksReady{false};
+std::atomic<bool> g_winHttpHooksReady{false};
+std::atomic<bool> g_winInetHooksReady{false};
 
 struct PendingChildInfo {
     DWORD pid = 0;
@@ -318,11 +324,24 @@ std::vector<wchar_t> CloneEnvironmentWithAppProxy(LPVOID lpEnvironment, bool isU
     std::vector<wchar_t> result;
     if (!lpEnvironment) return result;
 
-    auto startsWithKey = [](const std::wstring& kv) {
-        return _wcsnicmp(kv.c_str(), L"APPPROXY_BRIDGE_PID=", 20) == 0 ||
-               _wcsnicmp(kv.c_str(), L"APPPROXY_SESSION_ID=", 20) == 0 ||
-               _wcsnicmp(kv.c_str(), L"APPPROXY_FLAGS=", 15) == 0 ||
-               _wcsnicmp(kv.c_str(), L"APPPROXY_SELF_DIR=", 18) == 0;
+    uint32_t effectiveFlags = SharedBridgeClient::GetEffectiveFlags();
+    bool stripProxyEnv = (effectiveFlags & IPC::FLAG_IGNORE_SYSTEM_PROXY) != 0;
+
+    auto startsWithKey = [stripProxyEnv](const std::wstring& kv) {
+        if (_wcsnicmp(kv.c_str(), L"APPPROXY_BRIDGE_PID=", 20) == 0 ||
+            _wcsnicmp(kv.c_str(), L"APPPROXY_SESSION_ID=", 20) == 0 ||
+            _wcsnicmp(kv.c_str(), L"APPPROXY_FLAGS=", 15) == 0 ||
+            _wcsnicmp(kv.c_str(), L"APPPROXY_SELF_DIR=", 18) == 0) {
+            return true;
+        }
+        if (stripProxyEnv) {
+            return _wcsnicmp(kv.c_str(), L"HTTP_PROXY=", 11) == 0 ||
+                   _wcsnicmp(kv.c_str(), L"HTTPS_PROXY=", 12) == 0 ||
+                   _wcsnicmp(kv.c_str(), L"ALL_PROXY=", 10) == 0 ||
+                   _wcsnicmp(kv.c_str(), L"FTP_PROXY=", 10) == 0 ||
+                   _wcsnicmp(kv.c_str(), L"SOCKS_PROXY=", 12) == 0;
+        }
+        return false;
     };
 
     if (isUnicode) {
@@ -648,9 +667,56 @@ HMODULE WINAPI HookedLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dw
     return mod;
 }
 
+HMODULE WINAPI HookedKbLoadLibraryW(LPCWSTR lpLibFileName) {
+    HMODULE mod = g_TrueKbLoadLibraryW(lpLibFileName);
+    if (mod) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
+HMODULE WINAPI HookedKbLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
+    HMODULE mod = g_TrueKbLoadLibraryExW(lpLibFileName, hFile, dwFlags);
+    constexpr DWORD kDataOnlyFlags =
+        LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE;
+    if (mod && (dwFlags & kDataOnlyFlags) == 0) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
+HMODULE WINAPI HookedKbLoadLibraryA(LPCSTR lpLibFileName) {
+    HMODULE mod = g_TrueKbLoadLibraryA(lpLibFileName);
+    if (mod) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
+HMODULE WINAPI HookedKbLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
+    HMODULE mod = g_TrueKbLoadLibraryExA(lpLibFileName, hFile, dwFlags);
+    constexpr DWORD kDataOnlyFlags =
+        LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE;
+    if (mod && (dwFlags & kDataOnlyFlags) == 0) {
+        TryInstallLateHooks(true);
+    }
+    return mod;
+}
+
 } // namespace
 
 bool InstallProcessHooks() {
+    HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+    HMODULE hKernelBase = GetModuleHandleW(L"kernelbase.dll");
+    FARPROC pK32LoadLibW = hKernel32 ? GetProcAddress(hKernel32, "LoadLibraryW") : nullptr;
+    FARPROC pK32LoadLibExW = hKernel32 ? GetProcAddress(hKernel32, "LoadLibraryExW") : nullptr;
+    FARPROC pK32LoadLibA = hKernel32 ? GetProcAddress(hKernel32, "LoadLibraryA") : nullptr;
+    FARPROC pK32LoadLibExA = hKernel32 ? GetProcAddress(hKernel32, "LoadLibraryExA") : nullptr;
+    FARPROC pKbLoadLibW = hKernelBase ? GetProcAddress(hKernelBase, "LoadLibraryW") : nullptr;
+    FARPROC pKbLoadLibExW = hKernelBase ? GetProcAddress(hKernelBase, "LoadLibraryExW") : nullptr;
+    FARPROC pKbLoadLibA = hKernelBase ? GetProcAddress(hKernelBase, "LoadLibraryA") : nullptr;
+    FARPROC pKbLoadLibExA = hKernelBase ? GetProcAddress(hKernelBase, "LoadLibraryExA") : nullptr;
+
     MH_CreateHookApi(L"kernel32", "CreateProcessW", &HookedCreateProcessW, reinterpret_cast<LPVOID*>(&g_TrueCreateProcessW));
     MH_CreateHookApi(L"kernel32", "CreateProcessA", &HookedCreateProcessA, reinterpret_cast<LPVOID*>(&g_TrueCreateProcessA));
     MH_CreateHookApi(L"kernel32", "ResumeThread", &HookedResumeThread, reinterpret_cast<LPVOID*>(&g_TrueResumeThread));
@@ -659,14 +725,27 @@ bool InstallProcessHooks() {
     MH_CreateHookApi(L"kernel32", "LoadLibraryA", &HookedLoadLibraryA, reinterpret_cast<LPVOID*>(&g_TrueLoadLibraryA));
     MH_CreateHookApi(L"kernel32", "LoadLibraryExA", &HookedLoadLibraryExA, reinterpret_cast<LPVOID*>(&g_TrueLoadLibraryExA));
 
-    HMODULE hKernelBase = GetModuleHandleW(L"kernelbase.dll");
-    if (hKernelBase && GetProcAddress(hKernelBase, "CreateProcessAsUserW") != nullptr) {
-        if (MH_CreateHookApi(
-                L"kernelbase",
-                "CreateProcessAsUserW",
-                &HookedCreateProcessAsUserW,
-                reinterpret_cast<LPVOID*>(&g_TrueCreateProcessAsUserW)) == MH_OK) {
-            g_advapiHooksReady.store(true, std::memory_order_release);
+    if (hKernelBase) {
+        if (pKbLoadLibW && pKbLoadLibW != pK32LoadLibW) {
+            MH_CreateHookApi(L"kernelbase", "LoadLibraryW", &HookedKbLoadLibraryW, reinterpret_cast<LPVOID*>(&g_TrueKbLoadLibraryW));
+        }
+        if (pKbLoadLibExW && pKbLoadLibExW != pK32LoadLibExW) {
+            MH_CreateHookApi(L"kernelbase", "LoadLibraryExW", &HookedKbLoadLibraryExW, reinterpret_cast<LPVOID*>(&g_TrueKbLoadLibraryExW));
+        }
+        if (pKbLoadLibA && pKbLoadLibA != pK32LoadLibA) {
+            MH_CreateHookApi(L"kernelbase", "LoadLibraryA", &HookedKbLoadLibraryA, reinterpret_cast<LPVOID*>(&g_TrueKbLoadLibraryA));
+        }
+        if (pKbLoadLibExA && pKbLoadLibExA != pK32LoadLibExA) {
+            MH_CreateHookApi(L"kernelbase", "LoadLibraryExA", &HookedKbLoadLibraryExA, reinterpret_cast<LPVOID*>(&g_TrueKbLoadLibraryExA));
+        }
+        if (GetProcAddress(hKernelBase, "CreateProcessAsUserW") != nullptr) {
+            if (MH_CreateHookApi(
+                    L"kernelbase",
+                    "CreateProcessAsUserW",
+                    &HookedCreateProcessAsUserW,
+                    reinterpret_cast<LPVOID*>(&g_TrueCreateProcessAsUserW)) == MH_OK) {
+                g_advapiHooksReady.store(true, std::memory_order_release);
+            }
         }
     }
     return true;
@@ -680,13 +759,18 @@ void TryInstallLateHooks(bool enableImmediately) {
     bool needWs2 = !g_netHooksReady.load(std::memory_order_acquire) ||
                    !g_dnsHooksReady.load(std::memory_order_acquire);
     bool needAdvapi = !g_advapiHooksReady.load(std::memory_order_acquire);
-    if (!needWs2 && !needAdvapi) {
+    bool ignoreSysProxy = ShouldIgnoreSystemProxy();
+    bool needWinHttp = ignoreSysProxy && !g_winHttpHooksReady.load(std::memory_order_acquire);
+    bool needWinInet = ignoreSysProxy && !g_winInetHooksReady.load(std::memory_order_acquire);
+    if (!needWs2 && !needAdvapi && !needWinHttp && !needWinInet) {
         return;
     }
 
     bool ws2Loaded = needWs2 && (GetModuleHandleW(L"ws2_32.dll") != nullptr);
     bool advapiLoaded = needAdvapi && (GetModuleHandleW(L"advapi32.dll") != nullptr);
-    if (!ws2Loaded && !advapiLoaded) {
+    bool winHttpLoaded = needWinHttp && (GetModuleHandleW(L"winhttp.dll") != nullptr);
+    bool winInetLoaded = needWinInet && (GetModuleHandleW(L"wininet.dll") != nullptr);
+    if (!ws2Loaded && !advapiLoaded && !winHttpLoaded && !winInetLoaded) {
         return;
     }
 
@@ -721,6 +805,20 @@ void TryInstallLateHooks(bool enableImmediately) {
             needEnable = true;
         }
         g_advapiHooksReady.store(true, std::memory_order_release);
+    }
+
+    if (ignoreSysProxy && !g_winHttpHooksReady.load(std::memory_order_relaxed) && GetModuleHandleW(L"winhttp.dll")) {
+        if (InstallWinHttpHooks()) {
+            needEnable = true;
+        }
+        g_winHttpHooksReady.store(true, std::memory_order_release);
+    }
+
+    if (ignoreSysProxy && !g_winInetHooksReady.load(std::memory_order_relaxed) && GetModuleHandleW(L"wininet.dll")) {
+        if (InstallWinInetHooks()) {
+            needEnable = true;
+        }
+        g_winInetHooksReady.store(true, std::memory_order_release);
     }
 
     if (enableImmediately && needEnable) {

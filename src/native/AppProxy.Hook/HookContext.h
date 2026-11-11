@@ -69,10 +69,18 @@ inline uint64_t GetUnixTimeMs() {
     return (uli.QuadPart - kEpochDiff) / 10000ULL;
 }
 
+inline bool ShouldIgnoreSystemProxy() {
+    return (g_config.flags & IPC::FLAG_IGNORE_SYSTEM_PROXY) != 0;
+}
+
 // Hook installers declared across compilation units
 bool InstallNetworkHooks();
 bool InstallDnsHooks();
 bool InstallProcessHooks();
+bool InstallRegistryHooks();
+bool InstallWinHttpHooks();
+bool InstallWinInetHooks();
+void SanitizeProcessProxyEnv();
 void TryInstallLateHooks(bool enableImmediately);
 void CleanupProcessHooks();
 

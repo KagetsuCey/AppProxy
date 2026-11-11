@@ -11,7 +11,8 @@ public enum NativeSessionFlags : uint
     RemoteDns = 1u << 0,
     BypassLan = 1u << 1,
     InjectChildren = 1u << 2,
-    DirectMode = 1u << 3
+    DirectMode = 1u << 3,
+    IgnoreSystemProxy = 1u << 4
 }
 
 public enum NativeTargetAddrType : byte

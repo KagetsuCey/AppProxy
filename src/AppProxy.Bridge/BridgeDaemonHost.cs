@@ -180,6 +180,7 @@ internal sealed class BridgeDaemonHost : IDisposable
         if (_request.RemoteDns) flags |= NativeSessionFlags.RemoteDns;
         if (_request.BypassLan) flags |= NativeSessionFlags.BypassLan;
         if (_request.InjectChildren) flags |= NativeSessionFlags.InjectChildren;
+        if (_request.IgnoreSystemProxy) flags |= NativeSessionFlags.IgnoreSystemProxy;
 
         _appDisplayName = string.IsNullOrWhiteSpace(_request.AppName)
             ? Path.GetFileName(_request.ExePath)
@@ -230,6 +231,10 @@ internal sealed class BridgeDaemonHost : IDisposable
             ? 0
             : CountRunningInstances(_request.ExePath, exeNameNoExt);
 
+        string[]? removeEnvKeys = _request.IgnoreSystemProxy
+            ? ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "SOCKS_PROXY"]
+            : null;
+
         int exitCode;
         string stdout;
         string stderr;
@@ -240,7 +245,8 @@ internal sealed class BridgeDaemonHost : IDisposable
                 injectorArgs.ToString(),
                 nativeDir,
                 extraEnv,
-                _cts.Token);
+                _cts.Token,
+                removeEnvKeys);
         }
         catch (Exception ex)
         {

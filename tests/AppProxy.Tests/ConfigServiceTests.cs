@@ -108,6 +108,53 @@ public class ConfigServiceTests
             Assert.Equal("curl", loaded.Apps[0].Name);
             Assert.Equal(proxy.Id, loaded.Apps[0].ProxyProfileId);
             Assert.False(loaded.Apps[0].InjectChildren);
+            Assert.True(loaded.Apps[0].IgnoreSystemProxy);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void IgnoreSystemProxy_DefaultsToTrueForLegacyJson_AndRoundTripsFalse()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "AppProxySysProxyCfgTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string configFile = Path.Combine(tempDir, "config.json");
+
+        try
+        {
+            // Legacy JSON without IgnoreSystemProxy field
+            File.WriteAllText(configFile, """
+                {
+                  "IsDarkTheme": true,
+                  "Proxies": [],
+                  "Apps": [
+                    {
+                      "Name": "LegacyApp",
+                      "ExePath": "C:\\Windows\\System32\\curl.exe"
+                    }
+                  ]
+                }
+                """);
+
+            var service = new ConfigService(configFile);
+            AppConfig loaded = service.Load();
+            Assert.Single(loaded.Apps);
+            Assert.True(loaded.Apps[0].IgnoreSystemProxy);
+            Assert.True(loaded.Apps[0].Clone().IgnoreSystemProxy);
+
+            loaded.Apps[0].IgnoreSystemProxy = false;
+            Assert.False(loaded.Apps[0].Clone().IgnoreSystemProxy);
+
+            service.Save(loaded);
+            AppConfig reloaded = service.Load();
+            Assert.Single(reloaded.Apps);
+            Assert.False(reloaded.Apps[0].IgnoreSystemProxy);
         }
         finally
         {

@@ -6,6 +6,7 @@ using Xunit;
 
 namespace AppProxy.Tests;
 
+[Collection("EnvironmentVariables")]
 public class BridgeLifecycleTests
 {
     [Fact]
@@ -37,7 +38,14 @@ public class BridgeLifecycleTests
         Assert.NotNull(decoded);
         Assert.Equal("ChatGPT", decoded!.AppName);
         Assert.Equal(req.ExePath, decoded.ExePath);
+        Assert.True(decoded.IgnoreSystemProxy);
         Assert.NotNull(decoded.Proxy);
+
+        req.IgnoreSystemProxy = false;
+        BridgeLaunchRequest? decodedFalse = BridgeIpcCodec.DecodeLaunchRequestBase64(
+            BridgeIpcCodec.EncodeLaunchRequestBase64(req));
+        Assert.NotNull(decodedFalse);
+        Assert.False(decodedFalse!.IgnoreSystemProxy);
         Assert.Equal(ProxyProtocol.Https, decoded.Proxy!.Protocol);
         Assert.Equal("jp.exfantasy.com", decoded.Proxy.Host);
         Assert.Equal(9999, decoded.Proxy.Port);
@@ -132,5 +140,50 @@ public class BridgeLifecycleTests
         // Must not duplicate --user-data-dir if user already supplied one
         req.Arguments = @"--user-data-dir=""D:\CustomEdgeProfile""";
         Assert.Equal(@"--user-data-dir=""D:\CustomEdgeProfile""", req.BuildEffectiveArguments(@"D:\Apps\AppProxy"));
+    }
+
+    [Fact]
+    public async Task JobObjectTracker_RemovesProxyEnvironmentVariables_CaseInsensitively()
+    {
+        string? origHttp = Environment.GetEnvironmentVariable("HTTP_PROXY");
+        string? origHttpsLower = Environment.GetEnvironmentVariable("https_proxy");
+        string? origAll = Environment.GetEnvironmentVariable("ALL_PROXY");
+        string? origKeep = Environment.GetEnvironmentVariable("APPPROXY_KEEP_TEST");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:10809");
+            Environment.SetEnvironmentVariable("https_proxy", "http://127.0.0.1:10809");
+            Environment.SetEnvironmentVariable("ALL_PROXY", "socks5://127.0.0.1:10808");
+            Environment.SetEnvironmentVariable("APPPROXY_KEEP_TEST", "keep-value");
+
+            using var tracker = new JobObjectTracker();
+            string cmdExe = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+
+            var (exitCode, stdout, _) = await tracker.RunInJobAndCaptureAsync(
+                cmdExe,
+                "/c set",
+                Environment.SystemDirectory,
+                new Dictionary<string, string>
+                {
+                    ["APPPROXY_ADDED_TEST"] = "added-value"
+                },
+                removeEnvKeys: new[] { "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "SOCKS_PROXY" });
+
+            Assert.Equal(0, exitCode);
+            string[] lines = stdout.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            Assert.DoesNotContain(lines, l => l.StartsWith("HTTP_PROXY=", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(lines, l => l.StartsWith("HTTPS_PROXY=", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(lines, l => l.StartsWith("ALL_PROXY=", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(lines, l => l.Equals("APPPROXY_KEEP_TEST=keep-value", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(lines, l => l.Equals("APPPROXY_ADDED_TEST=added-value", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HTTP_PROXY", origHttp);
+            Environment.SetEnvironmentVariable("https_proxy", origHttpsLower);
+            Environment.SetEnvironmentVariable("ALL_PROXY", origAll);
+            Environment.SetEnvironmentVariable("APPPROXY_KEEP_TEST", origKeep);
+        }
     }
 }

@@ -330,6 +330,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             RemoteDns = true,
             BypassLan = true,
             InjectChildren = true,
+            IgnoreSystemProxy = true,
             IsolateProfileDir = AppProfile.IsChromiumBrowserExe(resolved.TargetExePath)
         };
         AddOrUpdateApp(app);

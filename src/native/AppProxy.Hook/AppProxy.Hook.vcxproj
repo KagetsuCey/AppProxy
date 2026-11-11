@@ -104,6 +104,8 @@
     <ClCompile Include="HooksNetwork.cpp" />
     <ClCompile Include="HooksDns.cpp" />
     <ClCompile Include="HooksProcess.cpp" />
+    <ClCompile Include="HooksWinHttp.cpp" />
+    <ClCompile Include="HooksSystemProxy.cpp" />
     <ClCompile Include="$(MinHookRoot)src\buffer.c">
       <CompileAs>CompileAsC</CompileAs>
       <WarningLevel>Level1</WarningLevel>
