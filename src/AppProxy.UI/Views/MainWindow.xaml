@@ -508,6 +508,35 @@
                                                                    FontSize="11"
                                                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                                     </Border>
+
+                                                    <!-- Max Instances Pill -->
+                                                    <Border Margin="6,0,0,0"
+                                                            ToolTip="最大允许同时运行的实例数（无论是否通过代理启动均计入）">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                                <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasCustomMaxInstances}" Value="True">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding MaxInstancesDisplay}" FontSize="11" FontWeight="Medium">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding HasCustomMaxInstances}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticWarningBrush}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
                                                 </StackPanel>
 
                                                 <TextBlock Text="{Binding ExePath}"

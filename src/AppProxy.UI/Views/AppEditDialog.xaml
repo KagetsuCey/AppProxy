@@ -4,7 +4,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="配置应用"
                  Width="560"
-                 Height="720"
+                 Height="760"
                  ResizeMode="NoResize"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
@@ -162,6 +162,42 @@
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="IgnoreSystemProxyToggle" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Border Height="1" Margin="0,10,0,10" Background="{DynamicResource SubtleDividerBrush}" />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                                <TextBlock Text="最大运行实例数 (最低为 1)" FontWeight="SemiBold" />
+                                <TextBlock Text="无论是否通过代理启动均计数；启动后实例数超过上限时将提示且不启动"
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button x:Name="DecrementMaxInstancesBtn"
+                                           Content="-"
+                                           Appearance="Secondary"
+                                           Width="34"
+                                           Padding="0,6"
+                                           Click="OnDecrementMaxInstances" />
+                                <ui:TextBox x:Name="MaxInstancesBox"
+                                            Width="58"
+                                            Margin="6,0"
+                                            TextAlignment="Center"
+                                            PlaceholderText="1"
+                                            TextChanged="OnMaxInstancesTextChanged" />
+                                <ui:Button x:Name="IncrementMaxInstancesBtn"
+                                           Content="+"
+                                           Appearance="Secondary"
+                                           Width="34"
+                                           Padding="0,6"
+                                           Click="OnIncrementMaxInstances" />
+                            </StackPanel>
                         </Grid>
                     </StackPanel>
                 </Border>

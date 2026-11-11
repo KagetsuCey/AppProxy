@@ -32,6 +32,15 @@ public sealed class BridgeLaunchRequest
     [JsonPropertyName("ignoreSystemProxy")]
     public bool IgnoreSystemProxy { get; set; } = true;
 
+    private int _maxInstances = 1;
+
+    [JsonPropertyName("maxInstances")]
+    public int MaxInstances
+    {
+        get => _maxInstances < 1 ? 1 : _maxInstances;
+        set => _maxInstances = value < 1 ? 1 : value;
+    }
+
     [JsonPropertyName("isolateProfileDir")]
     public bool IsolateProfileDir { get; set; }
 

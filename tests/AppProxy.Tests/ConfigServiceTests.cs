@@ -164,4 +164,60 @@ public class ConfigServiceTests
             }
         }
     }
+
+    [Fact]
+    public void MaxInstances_DefaultsToOne_ClampsBelowOne_AndRoundTrips()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "AppProxyMaxInstCfgTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string configFile = Path.Combine(tempDir, "config.json");
+
+        try
+        {
+            // Legacy JSON without MaxInstances field + JSON with out-of-range value 0
+            File.WriteAllText(configFile, """
+                {
+                  "IsDarkTheme": true,
+                  "Proxies": [],
+                  "Apps": [
+                    {
+                      "Name": "LegacyApp",
+                      "ExePath": "C:\\Windows\\System32\\curl.exe"
+                    },
+                    {
+                      "Name": "ZeroLimitApp",
+                      "ExePath": "C:\\Windows\\System32\\curl.exe",
+                      "MaxInstances": 0
+                    }
+                  ]
+                }
+                """);
+
+            var service = new ConfigService(configFile);
+            AppConfig loaded = service.Load();
+            Assert.Equal(2, loaded.Apps.Count);
+            Assert.Equal(1, loaded.Apps[0].MaxInstances);
+            Assert.Equal(1, loaded.Apps[1].MaxInstances);
+
+            loaded.Apps[0].MaxInstances = -3;
+            Assert.Equal(1, loaded.Apps[0].MaxInstances);
+
+            loaded.Apps[0].MaxInstances = 3;
+            Assert.Equal(3, loaded.Apps[0].MaxInstances);
+            Assert.Equal(3, loaded.Apps[0].Clone().MaxInstances);
+            Assert.True(loaded.Apps[0].HasCustomMaxInstances);
+
+            service.Save(loaded);
+            AppConfig reloaded = service.Load();
+            Assert.Equal(3, reloaded.Apps[0].MaxInstances);
+            Assert.Equal(1, reloaded.Apps[1].MaxInstances);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
 }

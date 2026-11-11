@@ -49,6 +49,22 @@ public partial class AppProfile : ObservableObject
     [ObservableProperty]
     private bool _ignoreSystemProxy = true;
 
+    private int _maxInstances = 1;
+
+    public int MaxInstances
+    {
+        get => _maxInstances < 1 ? 1 : _maxInstances;
+        set
+        {
+            int clamped = value < 1 ? 1 : value;
+            if (SetProperty(ref _maxInstances, clamped))
+            {
+                OnPropertyChanged(nameof(MaxInstancesDisplay));
+                OnPropertyChanged(nameof(HasCustomMaxInstances));
+            }
+        }
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(EffectiveIsolateProfileDir))]
     private bool? _isolateProfileDir;
@@ -80,6 +96,12 @@ public partial class AppProfile : ObservableObject
     [JsonIgnore]
     public bool HasArguments => !string.IsNullOrWhiteSpace(Arguments);
 
+    [JsonIgnore]
+    public bool HasCustomMaxInstances => MaxInstances > 1;
+
+    [JsonIgnore]
+    public string MaxInstancesDisplay => $"上限 {MaxInstances} 实例";
+
     public AppProfile Clone() => new()
     {
         Id = Id,
@@ -92,6 +114,7 @@ public partial class AppProfile : ObservableObject
         BypassLan = BypassLan,
         InjectChildren = InjectChildren,
         IgnoreSystemProxy = IgnoreSystemProxy,
+        MaxInstances = MaxInstances,
         IsolateProfileDir = IsolateProfileDir,
         DetectedArch = DetectedArch,
         Icon = Icon,

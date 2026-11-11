@@ -34,6 +34,16 @@ public sealed class AppLauncherService : IDisposable
             return (false, 0, $"Executable not found: {app.ExePath}");
         }
 
+        string appDisplayName = string.IsNullOrWhiteSpace(app.Name)
+            ? Path.GetFileName(app.ExePath)
+            : app.Name;
+
+        var limitCheck = ProcessInstanceCounter.CheckCanLaunch(app.ExePath, app.MaxInstances, appDisplayName);
+        if (!limitCheck.Allowed)
+        {
+            return (false, 0, limitCheck.BlockReason!);
+        }
+
         string baseDir = AppPaths.ResolveBaseDirectory();
         string bridgeExePath = AppPaths.GetBridgeExePath(baseDir);
         if (!File.Exists(bridgeExePath))
@@ -43,7 +53,7 @@ public sealed class AppLauncherService : IDisposable
 
         var request = new BridgeLaunchRequest
         {
-            AppName = string.IsNullOrWhiteSpace(app.Name) ? Path.GetFileName(app.ExePath) : app.Name,
+            AppName = appDisplayName,
             ExePath = app.ExePath,
             Arguments = app.Arguments ?? string.Empty,
             WorkingDirectory = string.IsNullOrWhiteSpace(app.WorkingDirectory)
@@ -53,6 +63,7 @@ public sealed class AppLauncherService : IDisposable
             BypassLan = app.BypassLan,
             InjectChildren = app.InjectChildren,
             IgnoreSystemProxy = app.IgnoreSystemProxy,
+            MaxInstances = app.MaxInstances,
             IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
             Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
         };

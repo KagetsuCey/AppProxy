@@ -331,6 +331,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             BypassLan = true,
             InjectChildren = true,
             IgnoreSystemProxy = true,
+            MaxInstances = 1,
             IsolateProfileDir = AppProfile.IsChromiumBrowserExe(resolved.TargetExePath)
         };
         AddOrUpdateApp(app);
@@ -359,7 +360,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = msg;
         if (!ok)
         {
-            System.Windows.MessageBox.Show(msg, "AppProxy Launch Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(msg, "AppProxy 启动提示", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

@@ -72,6 +72,7 @@ internal static class Program
                     BypassLan = app.BypassLan,
                     InjectChildren = app.InjectChildren,
                     IgnoreSystemProxy = app.IgnoreSystemProxy,
+                    MaxInstances = app.MaxInstances,
                     IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
                     Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
                 };

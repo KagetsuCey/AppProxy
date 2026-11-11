@@ -148,6 +148,22 @@ internal sealed class BridgeDaemonHost : IDisposable
             return 1;
         }
 
+        _appDisplayName = string.IsNullOrWhiteSpace(_request.AppName)
+            ? Path.GetFileName(_request.ExePath)
+            : _request.AppName;
+
+        var preCheck = ProcessInstanceCounter.CheckCanLaunch(_request.ExePath, _request.MaxInstances, _appDisplayName);
+        if (!preCheck.Allowed)
+        {
+            sendHandshake(new BridgeHandshakeResponse
+            {
+                Ok = false,
+                BridgePid = _bridgePid,
+                Error = preCheck.BlockReason
+            });
+            return 1;
+        }
+
         string nativeDir = AppPaths.GetNativeDirectory();
         string detectedArch = DetectPeArchitecture(_request.ExePath);
         string injectorName = detectedArch == "x86" ? "AppProxy.Injector.x86.exe" : "AppProxy.Injector.x64.exe";
@@ -181,10 +197,6 @@ internal sealed class BridgeDaemonHost : IDisposable
         if (_request.BypassLan) flags |= NativeSessionFlags.BypassLan;
         if (_request.InjectChildren) flags |= NativeSessionFlags.InjectChildren;
         if (_request.IgnoreSystemProxy) flags |= NativeSessionFlags.IgnoreSystemProxy;
-
-        _appDisplayName = string.IsNullOrWhiteSpace(_request.AppName)
-            ? Path.GetFileName(_request.ExePath)
-            : _request.AppName;
 
         _shm.RegisterSession(sessionId, flags);
         _bridge.RegisterSession(new SessionContext
@@ -226,37 +238,50 @@ internal sealed class BridgeDaemonHost : IDisposable
             ["APPPROXY_SELF_DIR"] = nativeDir
         };
 
-        string exeNameNoExt = Path.GetFileNameWithoutExtension(_request.ExePath);
-        int existingInstances = _request.IsolateProfileDir
-            ? 0
-            : CountRunningInstances(_request.ExePath, exeNameNoExt);
-
         string[]? removeEnvKeys = _request.IgnoreSystemProxy
             ? ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "SOCKS_PROXY"]
             : null;
 
+        int existingInstances;
         int exitCode;
         string stdout;
         string stderr;
-        try
+        using (await ProcessInstanceCounter.AcquireLaunchLockAsync(_request.ExePath, ct: _cts.Token))
         {
-            (exitCode, stdout, stderr) = await _jobTracker.RunInJobAndCaptureAsync(
-                injectorPath,
-                injectorArgs.ToString(),
-                nativeDir,
-                extraEnv,
-                _cts.Token,
-                removeEnvKeys);
-        }
-        catch (Exception ex)
-        {
-            sendHandshake(new BridgeHandshakeResponse
+            var limitCheck = ProcessInstanceCounter.CheckCanLaunch(_request.ExePath, _request.MaxInstances, _appDisplayName);
+            if (!limitCheck.Allowed)
             {
-                Ok = false,
-                BridgePid = _bridgePid,
-                Error = $"Failed to launch native injector: {ex.Message}"
-            });
-            return 1;
+                sendHandshake(new BridgeHandshakeResponse
+                {
+                    Ok = false,
+                    BridgePid = _bridgePid,
+                    Error = limitCheck.BlockReason
+                });
+                return 1;
+            }
+
+            existingInstances = limitCheck.RunningCount;
+
+            try
+            {
+                (exitCode, stdout, stderr) = await _jobTracker.RunInJobAndCaptureAsync(
+                    injectorPath,
+                    injectorArgs.ToString(),
+                    nativeDir,
+                    extraEnv,
+                    _cts.Token,
+                    removeEnvKeys);
+            }
+            catch (Exception ex)
+            {
+                sendHandshake(new BridgeHandshakeResponse
+                {
+                    Ok = false,
+                    BridgePid = _bridgePid,
+                    Error = $"Failed to launch native injector: {ex.Message}"
+                });
+                return 1;
+            }
         }
 
         InjectorOutput? result = null;
@@ -283,10 +308,11 @@ internal sealed class BridgeDaemonHost : IDisposable
         _targetPid = result.Pid;
         _jobTracker.TrackPidFallback(_targetPid);
 
+        bool warnSingleInstanceHandoff = !_request.IsolateProfileDir && existingInstances > 0;
         string launchMsg = proxyProfile is not null
             ? $"Launched via {proxyProfile.Name} ({proxyProfile.ProtocolDisplay} {proxyProfile.EndpointDisplay}) [Bridge #{_bridgePid}]"
             : $"Launched in Direct mode [Bridge #{_bridgePid}]";
-        if (existingInstances > 0)
+        if (warnSingleInstanceHandoff)
         {
             launchMsg += $" [Warning: {existingInstances} existing instance(s) detected; single-instance apps may hand off to the un-injected process]";
         }
@@ -304,7 +330,7 @@ internal sealed class BridgeDaemonHost : IDisposable
             Message = launchMsg
         });
 
-        _ = MonitorEarlySingleInstanceExitAsync(_targetPid, sessionId, Path.GetFileName(_request.ExePath), existingInstances > 0);
+        _ = MonitorEarlySingleInstanceExitAsync(_targetPid, sessionId, Path.GetFileName(_request.ExePath), warnSingleInstanceHandoff);
 
         sendHandshake(new BridgeHandshakeResponse
         {
@@ -314,7 +340,7 @@ internal sealed class BridgeDaemonHost : IDisposable
             PortV6 = _bridge.PortV6,
             TargetPid = _targetPid,
             Arch = result.Arch ?? detectedArch,
-            Warning = existingInstances > 0
+            Warning = warnSingleInstanceHandoff
                 ? $"Note: {existingInstances} existing instance(s) detected; close background instances if traffic is not captured"
                 : null
         });
@@ -695,37 +721,6 @@ internal sealed class BridgeDaemonHost : IDisposable
         catch
         {
         }
-    }
-
-    private static int CountRunningInstances(string fullExePath, string processNameNoExt)
-    {
-        int count = 0;
-        try
-        {
-            foreach (var p in Process.GetProcessesByName(processNameNoExt))
-            {
-                using (p)
-                {
-                    try
-                    {
-                        string? runningPath = p.MainModule?.FileName;
-                        if (string.IsNullOrEmpty(runningPath) ||
-                            string.Equals(runningPath, fullExePath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            count++;
-                        }
-                    }
-                    catch
-                    {
-                        count++;
-                    }
-                }
-            }
-        }
-        catch
-        {
-        }
-        return count;
     }
 
     private static string DetectPeArchitecture(string exePath)

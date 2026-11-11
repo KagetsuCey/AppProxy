@@ -40,6 +40,40 @@ public partial class AppEditDialog : FluentWindow
         InjectChildrenToggle.IsChecked = ResultApp.InjectChildren;
         IgnoreSystemProxyToggle.IsChecked = ResultApp.IgnoreSystemProxy;
         IsolateProfileToggle.IsChecked = ResultApp.GetEffectiveIsolateProfileDir();
+        MaxInstancesBox.Text = ResultApp.MaxInstances.ToString();
+        UpdateStepperButtonState();
+    }
+
+    private void OnDecrementMaxInstances(object sender, RoutedEventArgs e)
+    {
+        int current = int.TryParse(MaxInstancesBox.Text.Trim(), out int parsed) ? parsed : 1;
+        int next = Math.Max(1, current - 1);
+        MaxInstancesBox.Text = next.ToString();
+        UpdateStepperButtonState();
+    }
+
+    private void OnIncrementMaxInstances(object sender, RoutedEventArgs e)
+    {
+        int current = int.TryParse(MaxInstancesBox.Text.Trim(), out int parsed) ? Math.Max(1, parsed) : 1;
+        int next = current < int.MaxValue ? current + 1 : int.MaxValue;
+        MaxInstancesBox.Text = next.ToString();
+        UpdateStepperButtonState();
+    }
+
+    private void OnMaxInstancesTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        UpdateStepperButtonState();
+    }
+
+    private void UpdateStepperButtonState()
+    {
+        if (!IsInitialized || DecrementMaxInstancesBtn is null || MaxInstancesBox is null)
+        {
+            return;
+        }
+
+        DecrementMaxInstancesBtn.IsEnabled =
+            int.TryParse(MaxInstancesBox.Text.Trim(), out int parsed) && parsed > 1;
     }
 
     private void OnIsolateProfileClick(object sender, RoutedEventArgs e)
@@ -98,6 +132,13 @@ public partial class AppEditDialog : FluentWindow
             return;
         }
 
+        if (!int.TryParse(MaxInstancesBox.Text.Trim(), out int maxInstances) || maxInstances < 1)
+        {
+            System.Windows.MessageBox.Show(this, "最大运行实例数必须为不小于 1 的整数。", "提示", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
+            MaxInstancesBox.Focus();
+            return;
+        }
+
         ResultApp.Name = string.IsNullOrWhiteSpace(NameBox.Text)
             ? Path.GetFileNameWithoutExtension(exePath)
             : NameBox.Text.Trim();
@@ -109,6 +150,7 @@ public partial class AppEditDialog : FluentWindow
         ResultApp.BypassLan = BypassLanToggle.IsChecked == true;
         ResultApp.InjectChildren = InjectChildrenToggle.IsChecked == true;
         ResultApp.IgnoreSystemProxy = IgnoreSystemProxyToggle.IsChecked == true;
+        ResultApp.MaxInstances = maxInstances;
         ResultApp.IsolateProfileDir = IsolateProfileToggle.IsChecked == true;
 
         DialogResult = true;

@@ -39,13 +39,19 @@ public class BridgeLifecycleTests
         Assert.Equal("ChatGPT", decoded!.AppName);
         Assert.Equal(req.ExePath, decoded.ExePath);
         Assert.True(decoded.IgnoreSystemProxy);
+        Assert.Equal(1, decoded.MaxInstances);
         Assert.NotNull(decoded.Proxy);
+
+        req.MaxInstances = 0;
+        Assert.Equal(1, req.MaxInstances);
+        req.MaxInstances = 4;
 
         req.IgnoreSystemProxy = false;
         BridgeLaunchRequest? decodedFalse = BridgeIpcCodec.DecodeLaunchRequestBase64(
             BridgeIpcCodec.EncodeLaunchRequestBase64(req));
         Assert.NotNull(decodedFalse);
         Assert.False(decodedFalse!.IgnoreSystemProxy);
+        Assert.Equal(4, decodedFalse.MaxInstances);
         Assert.Equal(ProxyProtocol.Https, decoded.Proxy!.Protocol);
         Assert.Equal("jp.exfantasy.com", decoded.Proxy.Host);
         Assert.Equal(9999, decoded.Proxy.Port);
