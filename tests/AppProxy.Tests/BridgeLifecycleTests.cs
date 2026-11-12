@@ -519,6 +519,223 @@ public class BridgeLifecycleTests
         }
     }
 
+    [Fact]
+    public async Task JobObjectTracker_OrphanedSameExeElectronRunAsNodeAndChromiumSubproc_CleansUpAndCompletesAfterTargetExits()
+    {
+        if (!File.Exists(Csc64Path))
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "AppProxySameExeNodeJobTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        string csPath = Path.Combine(tempRoot, "SameExeElectronSim.cs");
+        string exePath = Path.Combine(tempRoot, "SameExeElectronSim.exe");
+        string mainPidFile = Path.Combine(tempRoot, "main_pid.txt");
+        string nodePidFile = Path.Combine(tempRoot, "node_pid.txt");
+        string utilPidFile = Path.Combine(tempRoot, "util_pid.txt");
+
+        int? nodePid = null;
+        int? utilPid = null;
+        try
+        {
+            File.WriteAllText(csPath, BuildSameExeElectronSimSource(), Encoding.UTF8);
+            CompileTestExe(csPath, exePath, target: "winexe", extraRefs: new[] { "System.Windows.Forms.dll", "System.Drawing.dll" });
+
+            string? cleanupSummary = null;
+            using var tracker = new JobObjectTracker();
+
+            var (exitCode, _, _) = await tracker.RunInJobAndCaptureAsync(
+                exePath,
+                $"--spawn-orphans-and-exit \"{mainPidFile}\" \"{nodePidFile}\" \"{utilPidFile}\"",
+                tempRoot,
+                new Dictionary<string, string>());
+
+            Assert.Equal(0, exitCode);
+            await WaitForFileAsync(mainPidFile, TimeSpan.FromSeconds(5));
+            await WaitForFileAsync(nodePidFile, TimeSpan.FromSeconds(5));
+            await WaitForFileAsync(utilPidFile, TimeSpan.FromSeconds(5));
+
+            uint mainPid = uint.Parse(File.ReadAllText(mainPidFile).Trim());
+            nodePid = int.Parse(File.ReadAllText(nodePidFile).Trim());
+            utilPid = int.Parse(File.ReadAllText(utilPidFile).Trim());
+
+            tracker.StartTargetExitWatchdog(new JobTargetMonitorOptions
+            {
+                TargetExePath = exePath,
+                TargetPid = mainPid,
+                PollInterval = TimeSpan.FromMilliseconds(80),
+                InfraOnlyGracePeriod = TimeSpan.FromMilliseconds(150),
+                OrphanHelperGracePeriod = TimeSpan.FromMilliseconds(350),
+                TerminateOrphansOnTargetExit = true,
+                OnJobCleanup = summary => cleanupSummary = summary
+            });
+
+            Task completed = await Task.WhenAny(tracker.AllProcessesExited, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(tracker.AllProcessesExited, completed);
+            Assert.False(string.IsNullOrWhiteSpace(cleanupSummary));
+            Assert.Contains("[node]", cleanupSummary!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("[utility]", cleanupSummary!, StringComparison.OrdinalIgnoreCase);
+
+            await Task.Delay(150);
+            Assert.False(IsProcessAlive(nodePid.Value), "Lingering ELECTRON_RUN_AS_NODE child should have been terminated after target exited.");
+            Assert.False(IsProcessAlive(utilPid.Value), "Lingering --type=utility child should have been terminated after target exited.");
+        }
+        finally
+        {
+            if (nodePid.HasValue) KillPidSafe(nodePid.Value);
+            if (utilPid.HasValue) KillPidSafe(utilPid.Value);
+            DeleteDirSafe(tempRoot);
+        }
+    }
+
+    [Fact]
+    public async Task JobObjectTracker_SameExeVisibleGuiRelaunch_StaysAliveUntilReplacementCloses()
+    {
+        if (!File.Exists(Csc64Path))
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "AppProxySameExeGuiRelaunchTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        string csPath = Path.Combine(tempRoot, "SameExeElectronSim.cs");
+        string exePath = Path.Combine(tempRoot, "SameExeRelaunchApp.exe");
+        string launcherPidFile = Path.Combine(tempRoot, "launcher_pid.txt");
+        string childReadyFile = Path.Combine(tempRoot, "child_gui_ready.txt");
+        string stopFile = Path.Combine(tempRoot, "child_gui_stop.txt");
+
+        int? childPid = null;
+        try
+        {
+            File.WriteAllText(csPath, BuildSameExeElectronSimSource(), Encoding.UTF8);
+            CompileTestExe(csPath, exePath, target: "winexe", extraRefs: new[] { "System.Windows.Forms.dll", "System.Drawing.dll" });
+
+            using var tracker = new JobObjectTracker();
+            var (exitCode, _, _) = await tracker.RunInJobAndCaptureAsync(
+                exePath,
+                $"--spawn-gui-and-exit \"{launcherPidFile}\" \"{childReadyFile}\" \"{stopFile}\"",
+                tempRoot,
+                new Dictionary<string, string>());
+
+            Assert.Equal(0, exitCode);
+            await WaitForFileAsync(launcherPidFile, TimeSpan.FromSeconds(5));
+            await WaitForFileAsync(childReadyFile, TimeSpan.FromSeconds(5));
+
+            uint launcherPid = uint.Parse(File.ReadAllText(launcherPidFile).Trim());
+            childPid = int.Parse(File.ReadAllText(childReadyFile).Trim());
+
+            tracker.StartTargetExitWatchdog(new JobTargetMonitorOptions
+            {
+                TargetExePath = exePath,
+                TargetPid = launcherPid,
+                PollInterval = TimeSpan.FromMilliseconds(80),
+                InfraOnlyGracePeriod = TimeSpan.FromMilliseconds(150),
+                OrphanHelperGracePeriod = TimeSpan.FromMilliseconds(350),
+                TerminateOrphansOnTargetExit = true
+            });
+
+            await Task.Delay(1100);
+            Assert.False(tracker.AllProcessesExited.IsCompleted, "Visible GUI replacement with same EXE must keep JobObjectTracker alive.");
+            Assert.True(IsProcessAlive(childPid.Value), "Replacement GUI process must remain alive until its window closes.");
+
+            File.WriteAllText(stopFile, "stop");
+            Task completed = await Task.WhenAny(tracker.AllProcessesExited, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(tracker.AllProcessesExited, completed);
+        }
+        finally
+        {
+            try { File.WriteAllText(stopFile, "stop"); } catch { }
+            if (childPid.HasValue) KillPidSafe(childPid.Value);
+            DeleteDirSafe(tempRoot);
+        }
+    }
+
+    [Fact]
+    public async Task BridgeProcess_LingeringSameExeElectronAsNodeChild_CleansUpAndBridgeExits()
+    {
+        if (!File.Exists(Csc64Path))
+        {
+            return;
+        }
+
+        string? bridgeExePath = FindBuiltBridgeExePath();
+        if (bridgeExePath is null)
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "AppProxyBridgeElectronSidecarTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        string csPath = Path.Combine(tempRoot, "SameExeElectronSim.cs");
+        string exePath = Path.Combine(tempRoot, "SameExeBridgeSim.exe");
+        string mainReadyFile = Path.Combine(tempRoot, "main_ready.txt");
+        string nodeReadyFile = Path.Combine(tempRoot, "node_ready.txt");
+        string stopFile = Path.Combine(tempRoot, "main_stop.txt");
+
+        Process? bridgeProc = null;
+        int? nodePid = null;
+        try
+        {
+            File.WriteAllText(csPath, BuildSameExeElectronSimSource(), Encoding.UTF8);
+            CompileTestExe(csPath, exePath, target: "winexe", extraRefs: new[] { "System.Windows.Forms.dll", "System.Drawing.dll" });
+
+            var req = new BridgeLaunchRequest
+            {
+                AppName = "SameExeBridgeSim",
+                ExePath = exePath,
+                Arguments = $"--run-with-node-child \"{mainReadyFile}\" \"{nodeReadyFile}\" \"{stopFile}\"",
+                MaxInstances = 1
+            };
+            string b64 = BridgeIpcCodec.EncodeLaunchRequestBase64(req);
+
+            bridgeProc = Process.Start(new ProcessStartInfo
+            {
+                FileName = bridgeExePath,
+                Arguments = $"--launch-b64 {b64}",
+                WorkingDirectory = Path.GetDirectoryName(bridgeExePath) ?? AppContext.BaseDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            });
+            Assert.NotNull(bridgeProc);
+
+            string? handshakeLine = await bridgeProc!.StandardOutput.ReadLineAsync()
+                .WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(string.IsNullOrWhiteSpace(handshakeLine));
+            BridgeHandshakeResponse? handshake =
+                BridgeIpcCodec.DeserializeLine<BridgeHandshakeResponse>(handshakeLine!.Trim());
+            Assert.NotNull(handshake);
+            Assert.True(handshake!.Ok, $"Bridge launch failed: {handshake.Error}");
+
+            await WaitForFileAsync(mainReadyFile, TimeSpan.FromSeconds(5));
+            await WaitForFileAsync(nodeReadyFile, TimeSpan.FromSeconds(5));
+            nodePid = int.Parse(File.ReadAllText(nodeReadyFile).Trim());
+            Assert.True(IsProcessAlive(nodePid.Value));
+
+            // Close main target cleanly; Bridge must clean up the lingering ELECTRON_RUN_AS_NODE same-EXE child and exit
+            File.WriteAllText(stopFile, "stop");
+
+            using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await bridgeProc.WaitForExitAsync(exitCts.Token);
+            Assert.Equal(0, bridgeProc.ExitCode);
+
+            await Task.Delay(150);
+            Assert.False(IsProcessAlive(nodePid.Value), "Lingering ELECTRON_RUN_AS_NODE process should not survive after Bridge exits.");
+        }
+        finally
+        {
+            try { File.WriteAllText(stopFile, "stop"); } catch { }
+            if (nodePid.HasValue) KillPidSafe(nodePid.Value);
+            if (bridgeProc is not null) KillProcessTreeSafe(bridgeProc);
+            DeleteDirSafe(tempRoot);
+        }
+    }
+
     private static string BuildOrphanWorkerSource() => """
         using System.Threading;
 
@@ -772,6 +989,199 @@ public class BridgeLifecycleTests
                   }
               }
               """;
+
+    private static string BuildSameExeElectronSimSource() => """
+        using System;
+        using System.Diagnostics;
+        using System.Drawing;
+        using System.IO;
+        using System.Reflection;
+        using System.Runtime.InteropServices;
+        using System.Threading;
+        using System.Windows.Forms;
+
+        internal sealed class OffscreenForm : Form
+        {
+            protected override bool ShowWithoutActivation { get { return true; } }
+
+            public OffscreenForm(string readyFile, string stopFile)
+            {
+                Text = "AppProxySameExeGuiChild";
+                StartPosition = FormStartPosition.Manual;
+                Location = new Point(-10000, -10000);
+                Size = new Size(160, 90);
+                ShowInTaskbar = false;
+
+                Shown += delegate { File.WriteAllText(readyFile, Process.GetCurrentProcess().Id.ToString()); };
+
+                System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+                t.Interval = 60;
+                t.Tick += delegate
+                {
+                    if (File.Exists(stopFile))
+                    {
+                        t.Stop();
+                        Close();
+                    }
+                };
+                t.Start();
+            }
+        }
+
+        internal static class Program
+        {
+            private const uint CREATE_NO_WINDOW = 0x08000000;
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct STARTUPINFOW
+            {
+                public int cb;
+                public IntPtr lpReserved;
+                public IntPtr lpDesktop;
+                public IntPtr lpTitle;
+                public uint dwX;
+                public uint dwY;
+                public uint dwXSize;
+                public uint dwYSize;
+                public uint dwXCountChars;
+                public uint dwYCountChars;
+                public uint dwFillAttribute;
+                public uint dwFlags;
+                public ushort wShowWindow;
+                public ushort cbReserved2;
+                public IntPtr lpReserved2;
+                public IntPtr hStdInput;
+                public IntPtr hStdOutput;
+                public IntPtr hStdError;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct PROCESS_INFORMATION
+            {
+                public IntPtr hProcess;
+                public IntPtr hThread;
+                public uint dwProcessId;
+                public uint dwThreadId;
+            }
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            private static extern bool CreateProcessW(
+                string lpApplicationName,
+                string lpCommandLine,
+                IntPtr lpProcessAttributes,
+                IntPtr lpThreadAttributes,
+                bool bInheritHandles,
+                uint dwCreationFlags,
+                IntPtr lpEnvironment,
+                string lpCurrentDirectory,
+                ref STARTUPINFOW lpStartupInfo,
+                out PROCESS_INFORMATION lpProcessInformation);
+
+            [DllImport("kernel32.dll")]
+            private static extern bool CloseHandle(IntPtr hObject);
+
+            private static bool LaunchClean(string appPath, string cmdLine, uint flags)
+            {
+                STARTUPINFOW si = new STARTUPINFOW();
+                si.cb = Marshal.SizeOf(typeof(STARTUPINFOW));
+                PROCESS_INFORMATION pi;
+                if (!CreateProcessW(appPath, cmdLine, IntPtr.Zero, IntPtr.Zero, false, flags, IntPtr.Zero, null, ref si, out pi))
+                {
+                    return false;
+                }
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+                return true;
+            }
+
+            private static void WaitForFile(string path, int timeoutMs)
+            {
+                DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+                while (!File.Exists(path) && DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(30);
+                }
+            }
+
+            [STAThread]
+            private static int Main(string[] args)
+            {
+                if (args.Length == 0) return 2;
+
+                string selfExe = Assembly.GetExecutingAssembly().Location;
+                string cmdExe = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+
+                for (int i = 0; i < args.Length - 1; i++)
+                {
+                    if (args[i] == "--sleep-ready")
+                    {
+                        File.WriteAllText(args[i + 1], Process.GetCurrentProcess().Id.ToString());
+                        Thread.Sleep(30000);
+                        return 0;
+                    }
+                }
+
+                if (args[0] == "--gui-child" && args.Length >= 3)
+                {
+                    Application.Run(new OffscreenForm(args[1], args[2]));
+                    return 0;
+                }
+
+                if (args[0] == "--spawn-orphans-and-exit" && args.Length >= 4)
+                {
+                    string mainPidFile = args[1];
+                    string nodePidFile = args[2];
+                    string utilPidFile = args[3];
+
+                    string cmdLineNode = "\"" + cmdExe + "\" /c set \"ELECTRON_RUN_AS_NODE=1\"&& \"" + selfExe + "\" --sleep-ready \"" + nodePidFile + "\"";
+                    if (!LaunchClean(cmdExe, cmdLineNode, CREATE_NO_WINDOW)) return 1;
+
+                    string cmdLineUtil = "\"" + selfExe + "\" --type=utility --sleep-ready \"" + utilPidFile + "\"";
+                    if (!LaunchClean(selfExe, cmdLineUtil, CREATE_NO_WINDOW)) return 1;
+
+                    WaitForFile(nodePidFile, 5000);
+                    WaitForFile(utilPidFile, 5000);
+                    File.WriteAllText(mainPidFile, Process.GetCurrentProcess().Id.ToString());
+                    return 0;
+                }
+
+                if (args[0] == "--spawn-gui-and-exit" && args.Length >= 4)
+                {
+                    string launcherPidFile = args[1];
+                    string childReadyFile = args[2];
+                    string stopFile = args[3];
+
+                    string cmdGui = "\"" + selfExe + "\" --gui-child \"" + childReadyFile + "\" \"" + stopFile + "\"";
+                    if (!LaunchClean(selfExe, cmdGui, 0u)) return 1;
+
+                    File.WriteAllText(launcherPidFile, Process.GetCurrentProcess().Id.ToString());
+                    return 0;
+                }
+
+                if (args[0] == "--run-with-node-child" && args.Length >= 4)
+                {
+                    string mainReadyFile = args[1];
+                    string nodeReadyFile = args[2];
+                    string stopFile = args[3];
+
+                    string cmdLineNode = "\"" + cmdExe + "\" /c set \"ELECTRON_RUN_AS_NODE=1\"&& \"" + selfExe + "\" --sleep-ready \"" + nodeReadyFile + "\"";
+                    if (!LaunchClean(cmdExe, cmdLineNode, CREATE_NO_WINDOW)) return 1;
+
+                    WaitForFile(nodeReadyFile, 5000);
+                    File.WriteAllText(mainReadyFile, Process.GetCurrentProcess().Id.ToString());
+
+                    DateTime deadline = DateTime.UtcNow.AddSeconds(15);
+                    while (!File.Exists(stopFile) && DateTime.UtcNow < deadline)
+                    {
+                        Thread.Sleep(40);
+                    }
+                    return 0;
+                }
+
+                return 2;
+            }
+        }
+        """;
 
     private static void CompileTestExe(string csPath, string outExePath, string target, string[]? extraRefs = null)
     {

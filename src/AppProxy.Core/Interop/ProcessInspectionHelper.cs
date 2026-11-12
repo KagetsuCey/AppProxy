@@ -14,6 +14,8 @@ public enum ProcessLiveState
 public static class ProcessInspectionHelper
 {
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const uint PROCESS_QUERY_INFORMATION = 0x0400;
+    private const uint PROCESS_VM_READ = 0x0010;
     private const uint SYNCHRONIZE = 0x00100000;
     private const uint WAIT_OBJECT_0 = 0x00000000;
     private const uint STILL_ACTIVE = 259;
@@ -22,9 +24,12 @@ public static class ProcessInspectionHelper
     private const int ERROR_INSUFFICIENT_BUFFER = 122;
     private const int ERROR_ACCESS_DENIED = 5;
 
+    private const int ProcessBasicInformation = 0;
+    private const int ProcessWow64Information = 26;
     private const int ProcessCommandLineInformation = 60;
     private const int STATUS_INFO_LENGTH_MISMATCH = unchecked((int)0xC0000004);
     private const int STATUS_BUFFER_TOO_SMALL = unchecked((int)0xC0000023);
+    private const int MaxEnvBlockBytes = 131072;
 
     private static readonly HashSet<string> CrashReporterExeNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -34,6 +39,30 @@ public static class ProcessInspectionHelper
         "wermgr.exe",
         "bssndrpt.exe",
         "bssndrpt64.exe"
+    };
+
+    private static readonly HashSet<string> ChromiumSubprocessTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "renderer",
+        "gpu-process",
+        "utility",
+        "zygote",
+        "broker",
+        "ppapi",
+        "ppapi-broker",
+        "plugin",
+        "plugin-zygote",
+        "nacl-loader",
+        "nacl-broker",
+        "crashpad-handler",
+        "crashpad",
+        "crash-reporter",
+        "watcher",
+        "cloud-print-service",
+        "sandbox",
+        "service",
+        "node",
+        "electron-as-node"
     };
 
     private static readonly HashSet<string> PureInfraExeNames = new(StringComparer.OrdinalIgnoreCase)
@@ -72,6 +101,17 @@ public static class ProcessInspectionHelper
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_BASIC_INFORMATION
+    {
+        public IntPtr ExitStatus;
+        public IntPtr PebBaseAddress;
+        public UIntPtr AffinityMask;
+        public IntPtr BasePriority;
+        public UIntPtr UniqueProcessId;
+        public UIntPtr InheritedFromUniqueProcessId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct RECT
     {
         public int Left;
@@ -84,6 +124,15 @@ public static class ProcessInspectionHelper
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReadProcessMemory(
+        IntPtr hProcess,
+        IntPtr lpBaseAddress,
+        [Out] byte[] lpBuffer,
+        UIntPtr nSize,
+        out UIntPtr lpNumberOfBytesRead);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
@@ -301,14 +350,308 @@ public static class ProcessInspectionHelper
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(commandLine))
+        string? procType = TryGetChromiumProcessType(commandLine);
+        if (!string.IsNullOrEmpty(procType))
         {
-            return ContainsSwitchToken(commandLine, "--type=crashpad-handler") ||
-                   ContainsSwitchToken(commandLine, "--type=crashpad") ||
-                   ContainsSwitchToken(commandLine, "--type=crash-reporter");
+            return string.Equals(procType, "crashpad-handler", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(procType, "crashpad", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(procType, "crash-reporter", StringComparison.OrdinalIgnoreCase);
         }
 
         return false;
+    }
+
+    public static string? TryGetChromiumProcessType(string? commandLine)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine)) return null;
+
+        const string prefix = "--type=";
+        int searchFrom = 0;
+        while (searchFrom <= commandLine.Length - prefix.Length)
+        {
+            int idx = commandLine.IndexOf(prefix, searchFrom, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return null;
+
+            bool validBefore = idx == 0 ||
+                               char.IsWhiteSpace(commandLine[idx - 1]) ||
+                               commandLine[idx - 1] == '"' ||
+                               commandLine[idx - 1] == '\'';
+            if (!validBefore)
+            {
+                searchFrom = idx + 1;
+                continue;
+            }
+
+            int valueStart = idx + prefix.Length;
+            if (valueStart >= commandLine.Length)
+            {
+                return null;
+            }
+
+            char openQuote = idx > 0 && (commandLine[idx - 1] == '"' || commandLine[idx - 1] == '\'')
+                ? commandLine[idx - 1]
+                : '\0';
+
+            int cursor = valueStart;
+            if (openQuote == '\0' && (commandLine[cursor] == '"' || commandLine[cursor] == '\''))
+            {
+                openQuote = commandLine[cursor];
+                cursor++;
+                valueStart = cursor;
+            }
+
+            while (cursor < commandLine.Length)
+            {
+                char ch = commandLine[cursor];
+                if (openQuote != '\0')
+                {
+                    if (ch == openQuote) break;
+                }
+                else if (char.IsWhiteSpace(ch) || ch == '"' || ch == '\'')
+                {
+                    break;
+                }
+                cursor++;
+            }
+
+            if (cursor > valueStart)
+            {
+                return commandLine.Substring(valueStart, cursor - valueStart);
+            }
+
+            searchFrom = idx + 1;
+        }
+
+        return null;
+    }
+
+    public static bool IsChromiumSubprocessType(string? processType) =>
+        !string.IsNullOrWhiteSpace(processType) &&
+        ChromiumSubprocessTypes.Contains(processType.Trim());
+
+    public static bool IsChromiumSubprocess(string? commandLine) =>
+        IsChromiumSubprocessType(TryGetChromiumProcessType(commandLine));
+
+    public static bool IsElectronRunAsNodeEnabled(string? commandLine, string? electronRunAsNodeEnvValue)
+    {
+        if (!string.IsNullOrWhiteSpace(commandLine) &&
+            ContainsSwitchToken(commandLine, "--ms-enable-electron-run-as-node"))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(electronRunAsNodeEnvValue))
+        {
+            return false;
+        }
+
+        string trimmed = electronRunAsNodeEnvValue.Trim();
+        return !string.Equals(trimmed, "0", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(trimmed, "off", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(trimmed, "no", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsElectronRunAsNodeProcess(uint pid, string? commandLine)
+    {
+        if (!string.IsNullOrWhiteSpace(commandLine) &&
+            ContainsSwitchToken(commandLine, "--ms-enable-electron-run-as-node"))
+        {
+            return true;
+        }
+
+        string? envVal = TryGetEnvironmentVariable(pid, "ELECTRON_RUN_AS_NODE");
+        return IsElectronRunAsNodeEnabled(null, envVal);
+    }
+
+    public static bool IsNonPrimaryHelperProcess(uint pid, string? exeFileNameOrPath, string? commandLine) =>
+        IsCrashpadOrCrashReporterProcess(exeFileNameOrPath, commandLine) ||
+        IsChromiumSubprocess(commandLine) ||
+        IsElectronRunAsNodeProcess(pid, commandLine);
+
+    public static string? TryGetEnvironmentVariable(uint pid, string variableName)
+    {
+        if (pid == 0 || string.IsNullOrWhiteSpace(variableName)) return null;
+
+        IntPtr hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
+        if (hProcess == IntPtr.Zero) return null;
+
+        try
+        {
+            ulong envPtr = TryGetRemoteEnvironmentAddress(hProcess);
+            if (envPtr == 0) return null;
+
+            using var ms = new MemoryStream(4096);
+            byte[] chunk = new byte[4096];
+            ulong cursor = envPtr;
+            int total = 0;
+
+            while (total < MaxEnvBlockBytes)
+            {
+                int pageRemaining = (int)(0x1000UL - (cursor & 0xFFFUL));
+                int toRead = Math.Min(pageRemaining, Math.Min(chunk.Length, MaxEnvBlockBytes - total));
+                if (toRead <= 0) break;
+
+                if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)cursor)), chunk, (UIntPtr)toRead, out UIntPtr bytesRead) ||
+                    bytesRead.ToUInt64() == 0)
+                {
+                    break;
+                }
+
+                int got = (int)bytesRead.ToUInt64();
+                ms.Write(chunk, 0, got);
+                int prevTotal = total;
+                total += got;
+                cursor += (ulong)got;
+
+                byte[] buf = ms.GetBuffer();
+                int checkStart = Math.Max(0, ((prevTotal - 4) / 2) * 2);
+                bool foundEnd = false;
+                for (int i = checkStart; i + 3 < total; i += 2)
+                {
+                    if (buf[i] == 0 && buf[i + 1] == 0 && buf[i + 2] == 0 && buf[i + 3] == 0)
+                    {
+                        total = i + 2;
+                        foundEnd = true;
+                        break;
+                    }
+                }
+
+                if (foundEnd) break;
+            }
+
+            int usableBytes = total & ~1;
+            if (usableBytes <= 0) return null;
+
+            string block = Encoding.Unicode.GetString(ms.GetBuffer(), 0, usableBytes);
+            return ParseEnvironmentVariableFromBlock(block, variableName);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            CloseHandle(hProcess);
+        }
+    }
+
+    internal static string? ParseEnvironmentVariableFromBlock(string envBlock, string variableName)
+    {
+        if (string.IsNullOrEmpty(envBlock) || string.IsNullOrWhiteSpace(variableName)) return null;
+
+        foreach (string entry in envBlock.Split('\0'))
+        {
+            if (string.IsNullOrEmpty(entry)) continue;
+            int eq = entry.IndexOf('=');
+            if (eq <= 0) continue;
+
+            if (entry.AsSpan(0, eq).Equals(variableName.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return entry.Substring(eq + 1);
+            }
+        }
+
+        return null;
+    }
+
+    private static ulong TryGetRemoteEnvironmentAddress(IntPtr hProcess)
+    {
+        ulong wow64Peb = 0;
+        IntPtr wow64Buf = Marshal.AllocHGlobal(IntPtr.Size);
+        try
+        {
+            if (NtQueryInformationProcess(hProcess, ProcessWow64Information, wow64Buf, (uint)IntPtr.Size, out _) == 0)
+            {
+                wow64Peb = IntPtr.Size == 8
+                    ? (ulong)Marshal.ReadInt64(wow64Buf)
+                    : (uint)Marshal.ReadInt32(wow64Buf);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(wow64Buf);
+        }
+
+        if (wow64Peb != 0)
+        {
+            byte[] ptr32 = new byte[4];
+            if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)(wow64Peb + 0x10UL))), ptr32, (UIntPtr)4, out UIntPtr r1) ||
+                r1.ToUInt64() != 4)
+            {
+                return 0;
+            }
+
+            uint rtl32 = BitConverter.ToUInt32(ptr32, 0);
+            if (rtl32 == 0) return 0;
+
+            if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)((ulong)rtl32 + 0x48UL))), ptr32, (UIntPtr)4, out UIntPtr r2) ||
+                r2.ToUInt64() != 4)
+            {
+                return 0;
+            }
+
+            return BitConverter.ToUInt32(ptr32, 0);
+        }
+
+        int pbiSize = Marshal.SizeOf<PROCESS_BASIC_INFORMATION>();
+        IntPtr pbiBuf = Marshal.AllocHGlobal(pbiSize);
+        ulong pebBase;
+        try
+        {
+            if (NtQueryInformationProcess(hProcess, ProcessBasicInformation, pbiBuf, (uint)pbiSize, out _) != 0)
+            {
+                return 0;
+            }
+
+            var pbi = Marshal.PtrToStructure<PROCESS_BASIC_INFORMATION>(pbiBuf);
+            pebBase = unchecked((ulong)pbi.PebBaseAddress.ToInt64());
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pbiBuf);
+        }
+
+        if (pebBase == 0) return 0;
+
+        if (Environment.Is64BitProcess)
+        {
+            byte[] ptr64 = new byte[8];
+            if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)(pebBase + 0x20UL))), ptr64, (UIntPtr)8, out UIntPtr r1) ||
+                r1.ToUInt64() != 8)
+            {
+                return 0;
+            }
+
+            ulong rtl64 = BitConverter.ToUInt64(ptr64, 0);
+            if (rtl64 == 0) return 0;
+
+            if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)(rtl64 + 0x80UL))), ptr64, (UIntPtr)8, out UIntPtr r2) ||
+                r2.ToUInt64() != 8)
+            {
+                return 0;
+            }
+
+            return BitConverter.ToUInt64(ptr64, 0);
+        }
+
+        byte[] ptrNative32 = new byte[4];
+        if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)(pebBase + 0x10UL))), ptrNative32, (UIntPtr)4, out UIntPtr rn1) ||
+            rn1.ToUInt64() != 4)
+        {
+            return 0;
+        }
+
+        uint rtlNative32 = BitConverter.ToUInt32(ptrNative32, 0);
+        if (rtlNative32 == 0) return 0;
+
+        if (!ReadProcessMemory(hProcess, new IntPtr(unchecked((long)((ulong)rtlNative32 + 0x48UL))), ptrNative32, (UIntPtr)4, out UIntPtr rn2) ||
+            rn2.ToUInt64() != 4)
+        {
+            return 0;
+        }
+
+        return BitConverter.ToUInt32(ptrNative32, 0);
     }
 
     public static bool IsPureInfrastructureProcess(string? exeFileNameOrPath, string? commandLine)

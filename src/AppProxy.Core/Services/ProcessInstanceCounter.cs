@@ -248,7 +248,7 @@ public static class ProcessInstanceCounter
                 // non-proxied instances still count toward the limit.
 
                 string? commandLine = ProcessInspectionHelper.TryGetCommandLine(pid);
-                if (ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(procFileName, commandLine))
+                if (ProcessInspectionHelper.IsNonPrimaryHelperProcess(pid, procFileName, commandLine))
                 {
                     continue;
                 }

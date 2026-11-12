@@ -82,6 +82,129 @@ public class ProcessInstanceCounterTests
     }
 
     [Fact]
+    public void ChromiumSubprocessAndElectronNodeDetection_UnitChecks()
+    {
+        Assert.Equal("renderer", ProcessInspectionHelper.TryGetChromiumProcessType("\"D:\\Apps\\Antigravity.exe\" --type=renderer --enable-sandbox"));
+        Assert.Equal("gpu-process", ProcessInspectionHelper.TryGetChromiumProcessType("\"D:\\Apps\\Antigravity.exe\" --type=gpu-process"));
+        Assert.Equal("utility", ProcessInspectionHelper.TryGetChromiumProcessType("\"D:\\Apps\\Antigravity.exe\" \"--type=utility\" --utility-sub-type=network.mojom.NetworkService"));
+        Assert.Equal("renderer", ProcessInspectionHelper.TryGetChromiumProcessType("Antigravity.exe --type=\"renderer\""));
+        Assert.Null(ProcessInspectionHelper.TryGetChromiumProcessType("\"D:\\Apps\\Antigravity.exe\" --monitor-self-argument=--type=crashpad-handler"));
+        Assert.Null(ProcessInspectionHelper.TryGetChromiumProcessType("\"D:\\Apps\\Antigravity.exe\""));
+
+        Assert.True(ProcessInspectionHelper.IsChromiumSubprocess("\"D:\\Apps\\Antigravity.exe\" --type=renderer"));
+        Assert.True(ProcessInspectionHelper.IsChromiumSubprocess("\"D:\\Apps\\Antigravity.exe\" --type=utility"));
+        Assert.True(ProcessInspectionHelper.IsChromiumSubprocess("\"D:\\Apps\\Antigravity.exe\" --type=gpu-process"));
+        Assert.True(ProcessInspectionHelper.IsChromiumSubprocess("\"D:\\Apps\\Antigravity.exe\" --type=zygote"));
+        Assert.False(ProcessInspectionHelper.IsChromiumSubprocess("\"D:\\Apps\\MyTool.exe\" --type=production"));
+        Assert.False(ProcessInspectionHelper.IsChromiumSubprocess("\"D:\\Apps\\Antigravity.exe\""));
+
+        Assert.True(ProcessInspectionHelper.IsElectronRunAsNodeEnabled(null, "1"));
+        Assert.True(ProcessInspectionHelper.IsElectronRunAsNodeEnabled(null, "true"));
+        Assert.True(ProcessInspectionHelper.IsElectronRunAsNodeEnabled("\"D:\\Apps\\App.exe\" --ms-enable-electron-run-as-node script.js", null));
+        Assert.False(ProcessInspectionHelper.IsElectronRunAsNodeEnabled(null, null));
+        Assert.False(ProcessInspectionHelper.IsElectronRunAsNodeEnabled(null, ""));
+        Assert.False(ProcessInspectionHelper.IsElectronRunAsNodeEnabled(null, "0"));
+        Assert.False(ProcessInspectionHelper.IsElectronRunAsNodeEnabled(null, "false"));
+    }
+
+    [Fact]
+    public async Task LiveProcesses_SameExeElectronRunAsNodeAndChromiumSubproc_ExcludedFromInstanceCount()
+    {
+        if (!File.Exists(Csc64Path))
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "AppProxyElectronCountTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string csPath = Path.Combine(tempRoot, "DummySleeper.cs");
+        string exe64Path = Path.Combine(tempRoot, "DummyElectronApp.exe");
+        string exe32Path = Path.Combine(tempRoot, "DummyElectronApp32.exe");
+        string sidecarReadyFile = Path.Combine(tempRoot, "sidecar_ready.txt");
+
+        var spawned = new List<Process>();
+        Process? sidecarProc = null;
+        try
+        {
+            File.WriteAllText(csPath, BuildDummySleeperSource(), Encoding.UTF8);
+            CompileWithCsc(csPath, exe64Path, platform: "x64");
+            CompileWithCsc(csPath, exe32Path, platform: "x86");
+
+            // 1. Simulate Antigravity's cmd.exe -> ELECTRON_RUN_AS_NODE=1 sidecar (unrelated parent cmd.exe, same EXE path)
+            string cmdExe = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            var cmdStart = new ProcessStartInfo
+            {
+                FileName = cmdExe,
+                Arguments = $"/c set \"ELECTRON_RUN_AS_NODE=1\"&& \"{exe64Path}\" --sleep-ms 20000 --ready-file \"{sidecarReadyFile}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            Process? cmdHolder = Process.Start(cmdStart);
+            Assert.NotNull(cmdHolder);
+            spawned.Add(cmdHolder!);
+
+            await WaitForFileAsync(sidecarReadyFile, TimeSpan.FromSeconds(5));
+            int sidecarPid = int.Parse(File.ReadAllText(sidecarReadyFile).Trim());
+            sidecarProc = Process.GetProcessById(sidecarPid);
+
+            Assert.Equal("1", ProcessInspectionHelper.TryGetEnvironmentVariable((uint)sidecarPid, "ELECTRON_RUN_AS_NODE"));
+            Assert.True(ProcessInspectionHelper.IsElectronRunAsNodeProcess((uint)sidecarPid, null));
+
+            // 2. Also add same-exe Chromium utility and crashpad siblings
+            Process utilityProc = StartSleeperProcess(exe64Path, "--type=utility --sleep-ms 20000");
+            spawned.Add(utilityProc);
+            Process crashpadProc = StartSleeperProcess(exe64Path, "--type=crashpad-handler --sleep-ms 20000");
+            spawned.Add(crashpadProc);
+
+            // With zero main instances (only Node sidecar + Chromium utility + crashpad), running count MUST be 0
+            Assert.Equal(0, ProcessInstanceCounter.CountRunningInstances(exe64Path));
+            Assert.True(ProcessInstanceCounter.CheckCanLaunch(exe64Path, 1, "DummyElectronApp").Allowed);
+
+            // 3. Start 1 main GUI-mode instance -> total count must be exactly 1 (never 2+)
+            Process mainProc = StartSleeperProcess(exe64Path, "--sleep-ms 20000");
+            spawned.Add(mainProc);
+            Assert.Equal(1, ProcessInstanceCounter.CountRunningInstances(exe64Path));
+
+            // 4. Close main instance while Node sidecar lingers -> count must drop back to 0 so relaunch isn't blocked
+            KillTreeSafe(mainProc);
+            spawned.Remove(mainProc);
+            Assert.Equal(0, ProcessInstanceCounter.CountRunningInstances(exe64Path));
+            Assert.True(ProcessInstanceCounter.CheckCanLaunch(exe64Path, 1, "DummyElectronApp").Allowed);
+
+            // 5. Verify WoW64 (32-bit) PEB ELECTRON_RUN_AS_NODE detection from 64-bit AppProxy
+            Process wow64NodeProc = StartSleeperProcess(
+                exe32Path,
+                "--sleep-ms 20000",
+                new Dictionary<string, string> { ["ELECTRON_RUN_AS_NODE"] = "1" });
+            spawned.Add(wow64NodeProc);
+            Assert.Equal("1", ProcessInspectionHelper.TryGetEnvironmentVariable((uint)wow64NodeProc.Id, "ELECTRON_RUN_AS_NODE"));
+            Assert.True(ProcessInspectionHelper.IsElectronRunAsNodeProcess((uint)wow64NodeProc.Id, null));
+            Assert.Equal(0, ProcessInstanceCounter.CountRunningInstances(exe32Path));
+        }
+        finally
+        {
+            if (sidecarProc is not null)
+            {
+                KillTreeSafe(sidecarProc);
+            }
+            foreach (var p in spawned)
+            {
+                KillTreeSafe(p);
+            }
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
     public void LiveProcesses_SameExeCrashpadHandler_IsExcludedFromInstanceCount()
     {
         if (!File.Exists(Csc64Path))
@@ -389,12 +512,12 @@ public class ProcessInstanceCounterTests
         }
         """;
 
-    private static void CompileWithCsc(string csPath, string outExePath)
+    private static void CompileWithCsc(string csPath, string outExePath, string platform = "x64")
     {
         using var proc = Process.Start(new ProcessStartInfo
         {
             FileName = Csc64Path,
-            Arguments = $"/nologo /optimize+ /target:winexe /out:\"{outExePath}\" \"{csPath}\"",
+            Arguments = $"/nologo /platform:{platform} /optimize+ /target:winexe /out:\"{outExePath}\" \"{csPath}\"",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -407,15 +530,26 @@ public class ProcessInstanceCounterTests
         Assert.True(proc.ExitCode == 0, $"csc failed ({proc.ExitCode}): {stdout}\n{stderr}");
     }
 
-    private static Process StartSleeperProcess(string exePath, string args)
+    private static Process StartSleeperProcess(
+        string exePath,
+        string args,
+        IReadOnlyDictionary<string, string>? extraEnv = null)
     {
-        var proc = Process.Start(new ProcessStartInfo
+        var psi = new ProcessStartInfo
         {
             FileName = exePath,
             Arguments = args,
             UseShellExecute = false,
             CreateNoWindow = true
-        });
+        };
+        if (extraEnv is not null)
+        {
+            foreach (var kv in extraEnv)
+            {
+                psi.Environment[kv.Key] = kv.Value;
+            }
+        }
+        var proc = Process.Start(psi);
         Assert.NotNull(proc);
         return proc!;
     }

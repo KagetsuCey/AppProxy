@@ -515,6 +515,7 @@ public sealed class JobObjectTracker : IDisposable
             ? TimeSpan.FromMilliseconds(50)
             : options.PollInterval;
 
+        uint activePrimaryPid = options.TargetPid;
         long? orphanSinceTicks = null;
 
         try
@@ -541,10 +542,44 @@ public sealed class JobObjectTracker : IDisposable
                 }
 
                 uint selfPid = (uint)Environment.ProcessId;
+                if (activePrimaryPid != 0 &&
+                    activePrimaryPid != selfPid &&
+                    Array.IndexOf(candidatePids, activePrimaryPid) >= 0)
+                {
+                    ProcessLiveState primaryState = ProcessInspectionHelper.InspectProcess(
+                        activePrimaryPid,
+                        includeCommandLine: true,
+                        out string? primaryImage,
+                        out string? primaryCmdLine);
+
+                    if (primaryState == ProcessLiveState.AccessDenied)
+                    {
+                        orphanSinceTicks = null;
+                        continue;
+                    }
+
+                    if (primaryState == ProcessLiveState.Alive)
+                    {
+                        string primaryExe = !string.IsNullOrWhiteSpace(primaryImage)
+                            ? Path.GetFileName(primaryImage)
+                            : $"pid:{activePrimaryPid}";
+
+                        if (!ProcessInspectionHelper.IsPureInfrastructureProcess(primaryExe, primaryCmdLine) &&
+                            !ProcessInspectionHelper.IsChromiumSubprocess(primaryCmdLine) &&
+                            (string.IsNullOrWhiteSpace(primaryImage) ||
+                             ProcessInstanceCounter.PathsMatch(primaryImage, normalizedTarget, canonicalTarget)))
+                        {
+                            orphanSinceTicks = null;
+                            continue;
+                        }
+                    }
+                }
+
                 bool hasPrimaryTarget = false;
                 bool hasAnyAlive = false;
                 var infraSurvivors = new List<(uint Pid, string Label)>();
                 var nonTargetSurvivors = new List<(uint Pid, string Label)>();
+                HashSet<uint>? fallbackGuiCandidates = null;
 
                 foreach (uint pid in candidatePids)
                 {
@@ -573,16 +608,48 @@ public sealed class JobObjectTracker : IDisposable
                     }
 
                     bool isCrashpadOrCrash = ProcessInspectionHelper.IsCrashpadOrCrashReporterProcess(exeName, commandLine);
+                    bool isPureInfra = ProcessInspectionHelper.IsPureInfrastructureProcess(exeName, commandLine);
                     bool matchesTargetPath = !string.IsNullOrWhiteSpace(imagePath) &&
                                              ProcessInstanceCounter.PathsMatch(imagePath, normalizedTarget, canonicalTarget);
 
-                    if (matchesTargetPath && !isCrashpadOrCrash)
+                    if (matchesTargetPath && !isCrashpadOrCrash && !isPureInfra)
                     {
-                        hasPrimaryTarget = true;
-                        break;
+                        if (ProcessInspectionHelper.IsElectronRunAsNodeProcess(pid, commandLine))
+                        {
+                            nonTargetSurvivors.Add((pid, $"{exeName}[node]"));
+                            continue;
+                        }
+
+                        string? chromiumType = ProcessInspectionHelper.TryGetChromiumProcessType(commandLine);
+                        if (ProcessInspectionHelper.IsChromiumSubprocessType(chromiumType))
+                        {
+                            nonTargetSurvivors.Add((pid, $"{exeName}[{chromiumType}]"));
+                            continue;
+                        }
+
+                        if (activePrimaryPid == 0)
+                        {
+                            activePrimaryPid = pid;
+                            hasPrimaryTarget = true;
+                            break;
+                        }
+
+                        if (pid == activePrimaryPid)
+                        {
+                            hasPrimaryTarget = true;
+                            break;
+                        }
+
+                        // The original launched TargetPid has already exited, leaving a secondary same-EXE process.
+                        // Keep it alive only if it actually presents a visible GUI window (e.g. self-restart);
+                        // otherwise let OrphanHelperGracePeriod clean up headless workers.
+                        fallbackGuiCandidates ??= new HashSet<uint>();
+                        fallbackGuiCandidates.Add(pid);
+                        nonTargetSurvivors.Add((pid, $"{exeName}[secondary]"));
+                        continue;
                     }
 
-                    if (ProcessInspectionHelper.IsPureInfrastructureProcess(exeName, commandLine))
+                    if (isPureInfra)
                     {
                         string tag = isCrashpadOrCrash &&
                                      !string.Equals(exeName, "crashpad_handler.exe", StringComparison.OrdinalIgnoreCase)
@@ -630,6 +697,17 @@ public sealed class JobObjectTracker : IDisposable
                     HashSet<uint> visibleWindowPids = ProcessInspectionHelper.GetProcessIdsWithVisibleWindows(nonTargetPids);
                     if (visibleWindowPids.Count > 0)
                     {
+                        if (fallbackGuiCandidates is not null)
+                        {
+                            foreach (uint cand in fallbackGuiCandidates)
+                            {
+                                if (visibleWindowPids.Contains(cand))
+                                {
+                                    activePrimaryPid = cand;
+                                    break;
+                                }
+                            }
+                        }
                         orphanSinceTicks = null;
                         continue;
                     }
