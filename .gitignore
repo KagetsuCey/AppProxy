@@ -29,3 +29,9 @@ data/
 # Optional local portable packaging tools (e.g. Inno Setup)
 tools/InnoSetup/
 tools/InnoSetup7/
+
+# idea
+.idea
+
+# idea
+.idea
