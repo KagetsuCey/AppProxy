@@ -963,7 +963,8 @@ public static class DetachedProcessLauncher
         string exePath,
         string arguments,
         string workingDirectory,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        string? stdinPayload = null)
     {
         var sa = new SECURITY_ATTRIBUTES
         {
@@ -974,7 +975,34 @@ public static class DetachedProcessLauncher
         if (!CreatePipe(out SafeFileHandle readPipe, out SafeFileHandle writePipe, ref sa, 0))
             throw new Win32Exception(Marshal.GetLastWin32Error());
 
+        byte[]? stdinBytes = null;
+        SafeFileHandle? stdinRead = null;
+        SafeFileHandle? stdinWrite = null;
+
+        try
+        {
+            if (stdinPayload is not null)
+            {
+                stdinBytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(stdinPayload + "\n");
+                uint pipeBufSize = (uint)Math.Max(8192, stdinBytes.Length + 256);
+                if (!CreatePipe(out stdinRead, out stdinWrite, ref sa, pipeBufSize))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+                SetHandleInformation(stdinWrite, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+        catch
+        {
+            stdinRead?.Dispose();
+            stdinWrite?.Dispose();
+            readPipe.Dispose();
+            writePipe.Dispose();
+            throw;
+        }
+
         using (readPipe)
+        using (stdinWrite)
         {
             SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
 
@@ -982,7 +1010,7 @@ public static class DetachedProcessLauncher
             {
                 cb = Marshal.SizeOf<STARTUPINFOW>(),
                 dwFlags = STARTF_USESTDHANDLES,
-                hStdInput = IntPtr.Zero,
+                hStdInput = stdinRead is not null ? stdinRead.DangerousGetHandle() : IntPtr.Zero,
                 hStdOutput = writePipe.DangerousGetHandle(),
                 hStdError = writePipe.DangerousGetHandle()
             };
@@ -1037,6 +1065,7 @@ public static class DetachedProcessLauncher
             finally
             {
                 writePipe.Dispose();
+                stdinRead?.Dispose();
             }
 
             uint pid = pi.dwProcessId;
@@ -1044,6 +1073,17 @@ public static class DetachedProcessLauncher
             CloseHandle(pi.hProcess);
 
             using var cts = new CancellationTokenSource(timeout);
+
+            if (stdinWrite is not null && stdinBytes is not null)
+            {
+                using (var inStream = new FileStream(stdinWrite, FileAccess.Write, 4096, isAsync: false))
+                {
+                    await inStream.WriteAsync(stdinBytes, cts.Token);
+                    await inStream.FlushAsync(cts.Token);
+                }
+                stdinWrite.Dispose();
+            }
+
             using var stream = new FileStream(readPipe, FileAccess.Read, 4096, isAsync: false);
             using var reader = new StreamReader(stream, Encoding.UTF8);
             string? line = await reader.ReadLineAsync(cts.Token);

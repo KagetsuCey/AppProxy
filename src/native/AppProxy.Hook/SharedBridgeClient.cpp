@@ -180,11 +180,12 @@ uint32_t SharedBridgeClient::AllocateOrGetFakeIp(const char* domain) {
         return 0;
     }
 
+    uint32_t cachedIp = 0;
     {
         std::lock_guard<std::mutex> lock(g_fakeCacheMutex);
         auto it = g_fakeIpCache.find(norm);
         if (it != g_fakeIpCache.end()) {
-            return it->second;
+            cachedIp = it->second;
         }
     }
 
@@ -195,27 +196,74 @@ uint32_t SharedBridgeClient::AllocateOrGetFakeIp(const char* domain) {
         return 0;
     }
 
+    uint32_t nowTick = GetTickCount();
+
+    // O(1) cross-process coherence check on local cache hit: verifies the shared slot
+    // still belongs to this domain (guarding against ring-buffer wrap-around eviction).
+    if (cachedIp >= IPC::kFakeIpBase) {
+        uint32_t cachedSlot = cachedIp - IPC::kFakeIpBase;
+        if (cachedSlot < IPC::kMaxFakeIps) {
+            auto& cachedEntry = g_shared->fakeIps[cachedSlot];
+            if (cachedEntry.fakeIpHostOrder == cachedIp &&
+                _stricmp(cachedEntry.domain, norm.c_str()) == 0) {
+                cachedEntry.lastUsedTick = nowTick;
+                if (g_hNamedMutex) {
+                    ReleaseMutex(g_hNamedMutex);
+                }
+                return cachedIp;
+            }
+        }
+    }
+
     uint32_t resultIp = 0;
     bool newlyAllocated = false;
+    std::string evictedDomain;
 
     // Look for existing mapping in shared memory
     for (uint32_t i = 0; i < IPC::kMaxFakeIps; ++i) {
         auto& entry = g_shared->fakeIps[i];
         if (entry.fakeIpHostOrder == 0) break;
         if (_stricmp(entry.domain, norm.c_str()) == 0) {
-            entry.lastUsedTick = GetTickCount();
+            entry.lastUsedTick = nowTick;
             resultIp = entry.fakeIpHostOrder;
             break;
         }
     }
 
     if (resultIp == 0) {
-        uint32_t slot = g_shared->nextFakeIpOffset % IPC::kMaxFakeIps;
-        g_shared->nextFakeIpOffset = (slot + 1) % IPC::kMaxFakeIps;
+        uint32_t startSlot = g_shared->nextFakeIpOffset % IPC::kMaxFakeIps;
+        uint32_t chosenSlot = startSlot;
 
-        auto& entry = g_shared->fakeIps[slot];
-        entry.fakeIpHostOrder = IPC::kFakeIpBase + slot;
-        entry.lastUsedTick = GetTickCount();
+        // If the ring buffer has wrapped and the candidate slot is occupied, inspect a
+        // 32-slot window and evict the stalest entry (approximate LRU via lastUsedTick)
+        // so hot domains are not immediately evicted upon wrap-around.
+        if (g_shared->fakeIps[startSlot].fakeIpHostOrder != 0) {
+            constexpr uint32_t kEvictionWindow = 32;
+            uint32_t maxAge = 0;
+            for (uint32_t offset = 0; offset < kEvictionWindow; ++offset) {
+                uint32_t candidate = (startSlot + offset) % IPC::kMaxFakeIps;
+                const auto& candEntry = g_shared->fakeIps[candidate];
+                if (candEntry.fakeIpHostOrder == 0) {
+                    chosenSlot = candidate;
+                    break;
+                }
+                uint32_t age = nowTick - candEntry.lastUsedTick;
+                if (offset == 0 || age > maxAge) {
+                    maxAge = age;
+                    chosenSlot = candidate;
+                }
+            }
+        }
+
+        g_shared->nextFakeIpOffset = (chosenSlot + 1) % IPC::kMaxFakeIps;
+
+        auto& entry = g_shared->fakeIps[chosenSlot];
+        if (entry.fakeIpHostOrder != 0 && entry.domain[0] != '\0') {
+            evictedDomain.assign(entry.domain, strnlen(entry.domain, sizeof(entry.domain)));
+        }
+
+        entry.fakeIpHostOrder = IPC::kFakeIpBase + chosenSlot;
+        entry.lastUsedTick = nowTick;
         std::memset(entry.domain, 0, sizeof(entry.domain));
         std::memcpy(entry.domain, norm.data(), norm.size());
         resultIp = entry.fakeIpHostOrder;
@@ -227,8 +275,19 @@ uint32_t SharedBridgeClient::AllocateOrGetFakeIp(const char* domain) {
     }
 
     if (resultIp != 0) {
-        std::lock_guard<std::mutex> lock(g_fakeCacheMutex);
-        g_fakeIpCache[norm] = resultIp;
+        {
+            std::lock_guard<std::mutex> lock(g_fakeCacheMutex);
+            if (!evictedDomain.empty()) {
+                auto evictedIt = g_fakeIpCache.find(evictedDomain);
+                if (evictedIt != g_fakeIpCache.end() && evictedIt->second == resultIp) {
+                    g_fakeIpCache.erase(evictedIt);
+                }
+            }
+            if (g_fakeIpCache.size() >= IPC::kMaxFakeIps) {
+                g_fakeIpCache.clear();
+            }
+            g_fakeIpCache[norm] = resultIp;
+        }
 
         if (newlyAllocated) {
             char ipBuf[32]{};

@@ -16,12 +16,20 @@ namespace AppProxy.UI.ViewModels;
 
 public partial class MainViewModel : ObservableObject, IDisposable
 {
+    private readonly record struct ConnectionQueueItem(BridgeConnectionDto? Upsert, uint DisconnectBridgePid)
+    {
+        public bool IsDisconnect => Upsert is null;
+        public static ConnectionQueueItem ForUpsert(BridgeConnectionDto dto) => new(dto, 0);
+        public static ConnectionQueueItem ForDisconnect(uint bridgePid) => new(null, bridgePid);
+    }
+
     private readonly ConfigService _configService;
     private readonly AppLauncherService _launcher;
     private readonly DispatcherTimer _uiFlushTimer;
-    private readonly ConcurrentQueue<BridgeConnectionDto> _pendingConnectionUpserts = new();
+    private readonly ConcurrentQueue<ConnectionQueueItem> _pendingConnectionOps = new();
     private readonly ConcurrentQueue<ProcessEventRecord> _pendingEvents = new();
     private readonly Dictionary<(uint BridgePid, long Id), ConnectionRecord> _connectionIndex = new();
+    private int _bridgeSummaryDirty;
     private AppConfig _config;
     private bool _isInitializing = true;
 
@@ -84,14 +92,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _config = _configService.Load();
 
         _launcher = new AppLauncherService();
-        _launcher.ConnectionUpserted += dto => _pendingConnectionUpserts.Enqueue(dto);
+        _launcher.ConnectionUpserted += EnqueueConnectionUpsert;
         _launcher.ProcessEventReceived += ev => _pendingEvents.Enqueue(ev);
-        _launcher.BridgeStatusUpdated += _ => RefreshBridgeSummary();
-        _launcher.BridgeDisconnected += bridgePid =>
-        {
-            RefreshBridgeSummary();
-            MarkBridgeConnectionsClosed(bridgePid);
-        };
+        _launcher.BridgeStatusUpdated += _ => Volatile.Write(ref _bridgeSummaryDirty, 1);
+        _launcher.BridgeDisconnected += EnqueueBridgeDisconnect;
 
         IsDarkTheme = _config.IsDarkTheme;
         TestProbeHost = string.IsNullOrWhiteSpace(_config.TestProbeHost) ? "www.gstatic.com" : _config.TestProbeHost;
@@ -224,25 +228,42 @@ public partial class MainViewModel : ObservableObject, IDisposable
                conn.Status.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void OnFlushTimerTick(object? sender, EventArgs e)
+    internal void EnqueueConnectionUpsert(BridgeConnectionDto dto) =>
+        _pendingConnectionOps.Enqueue(ConnectionQueueItem.ForUpsert(dto));
+
+    internal void EnqueueBridgeDisconnect(uint bridgePid)
     {
-        int connProcessed = 0;
-        while (connProcessed < 128 && _pendingConnectionUpserts.TryDequeue(out var dto))
+        _pendingConnectionOps.Enqueue(ConnectionQueueItem.ForDisconnect(bridgePid));
+        Volatile.Write(ref _bridgeSummaryDirty, 1);
+    }
+
+    internal int ProcessPendingConnectionOpsBatch(int maxItems = 128)
+    {
+        int processed = 0;
+        while (processed < maxItems && _pendingConnectionOps.TryDequeue(out var item))
         {
-            var key = (dto.BridgePid, dto.Id);
-            if (_connectionIndex.TryGetValue(key, out var existing))
+            if (item.IsDisconnect)
             {
-                existing.ApplySnapshot(dto.Status, dto.LatencyMs, dto.BytesUp, dto.BytesDown, dto.ErrorMessage);
-                existing.SyncToUi();
+                MarkBridgeConnectionsClosed(item.DisconnectBridgePid);
             }
             else
             {
-                var rec = dto.ToRecord();
-                rec.SyncToUi();
-                _connectionIndex[key] = rec;
-                Connections.Insert(0, rec);
+                BridgeConnectionDto dto = item.Upsert!;
+                var key = (dto.BridgePid, dto.Id);
+                if (_connectionIndex.TryGetValue(key, out var existing))
+                {
+                    existing.ApplySnapshot(dto.Status, dto.LatencyMs, dto.BytesUp, dto.BytesDown, dto.ErrorMessage);
+                    existing.SyncToUi();
+                }
+                else
+                {
+                    var rec = dto.ToRecord();
+                    rec.SyncToUi();
+                    _connectionIndex[key] = rec;
+                    Connections.Insert(0, rec);
+                }
             }
-            connProcessed++;
+            processed++;
         }
 
         while (Connections.Count > 2000)
@@ -251,6 +272,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _connectionIndex.Remove((last.BridgePid, last.Id));
             Connections.RemoveAt(Connections.Count - 1);
         }
+
+        return processed;
+    }
+
+    private void OnFlushTimerTick(object? sender, EventArgs e)
+    {
+        ProcessPendingConnectionOpsBatch(128);
 
         int evAdded = 0;
         while (evAdded < 64 && _pendingEvents.TryDequeue(out var ev))
@@ -269,6 +297,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         RefreshTrafficTotals();
+        Interlocked.Exchange(ref _bridgeSummaryDirty, 0);
         RefreshBridgeSummary();
     }
 
@@ -357,6 +386,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         StatusMessage = $"Launching standalone bridge and injecting {app.Name}...";
         var (ok, _, msg) = await _launcher.LaunchAppAsync(app, proxy);
+        RefreshBridgeSummary();
         StatusMessage = msg;
         if (!ok)
         {

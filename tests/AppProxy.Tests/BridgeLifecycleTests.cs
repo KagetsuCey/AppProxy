@@ -121,6 +121,155 @@ public class BridgeLifecycleTests
     }
 
     [Fact]
+    public async Task DetachedProcessLauncher_PassesPayloadViaStdinPipe_WithoutCommandLineExposure()
+    {
+        string cmdExe = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        string secretToken = "stdin-secret-payload-" + Guid.NewGuid().ToString("N");
+
+        var (pid, firstLine) = await DetachedProcessLauncher.StartDetachedAndReadFirstLineAsync(
+            cmdExe,
+            "/c set /p LINE= & call echo %LINE%",
+            Environment.SystemDirectory,
+            TimeSpan.FromSeconds(5),
+            stdinPayload: secretToken);
+
+        Assert.True(pid > 0);
+        Assert.Equal(secretToken, firstLine.Trim());
+    }
+
+    [Fact]
+    public async Task BridgeProcess_LaunchStdinMode_HidesProxyCredentialsFromCommandLine_AndAppliesUiPipeAcl()
+    {
+        if (!File.Exists(Csc64Path))
+        {
+            return;
+        }
+
+        string? bridgeExePath = FindBuiltBridgeExePath();
+        if (bridgeExePath is null)
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "AppProxyStdinBridgeTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        string csPath = Path.Combine(tempRoot, "StdinModeTarget.cs");
+        string exePath = Path.Combine(tempRoot, "StdinModeTarget.exe");
+        string readyFile = Path.Combine(tempRoot, "ready.txt");
+        string stopFile = Path.Combine(tempRoot, "stop.txt");
+
+        uint spawnedBridgePid = 0;
+        try
+        {
+            File.WriteAllText(csPath, BuildStopFileAppSource(isConsole: false), Encoding.UTF8);
+            CompileTestExe(csPath, exePath, target: "winexe");
+
+            const string secretUser = "secret_user_98765";
+            const string secretPass = "SuperSecretProxyPass!@#2026";
+            var req = new BridgeLaunchRequest
+            {
+                AppName = "StdinModeTarget",
+                ExePath = exePath,
+                Arguments = $"\"{readyFile}\" \"{stopFile}\"",
+                IgnoreSystemProxy = true,
+                RemoteDns = true,
+                BypassLan = true,
+                InjectChildren = true,
+                MaxInstances = 1,
+                Proxy = new BridgeProxyConfig
+                {
+                    Name = "AuthNode",
+                    Protocol = ProxyProtocol.Socks5,
+                    Host = "127.0.0.1",
+                    Port = 10808,
+                    Username = secretUser,
+                    Password = secretPass
+                }
+            };
+
+            string requestJson = BridgeIpcCodec.SerializeLine(req);
+            var (bridgePid, handshakeLine) = await DetachedProcessLauncher.StartDetachedAndReadFirstLineAsync(
+                bridgeExePath,
+                "--launch-stdin",
+                Path.GetDirectoryName(bridgeExePath) ?? AppContext.BaseDirectory,
+                TimeSpan.FromSeconds(10),
+                stdinPayload: requestJson);
+
+            spawnedBridgePid = bridgePid;
+            Assert.True(bridgePid > 0);
+            Assert.False(string.IsNullOrWhiteSpace(handshakeLine));
+
+            BridgeHandshakeResponse? handshake =
+                BridgeIpcCodec.DeserializeLine<BridgeHandshakeResponse>(handshakeLine.Trim());
+            Assert.NotNull(handshake);
+            Assert.True(handshake!.Ok, $"Bridge --launch-stdin failed: {handshake.Error}");
+            Assert.Equal(bridgePid, handshake.BridgePid);
+
+            await WaitForFileAsync(readyFile, TimeSpan.FromSeconds(5));
+
+            // Verify command line of the running Bridge process does not expose proxy credentials or --launch-b64
+            string? bridgeCmdLine = ProcessInspectionHelper.TryGetCommandLine(bridgePid);
+            Assert.False(string.IsNullOrWhiteSpace(bridgeCmdLine));
+            Assert.Contains("--launch-stdin", bridgeCmdLine!, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("--launch-b64", bridgeCmdLine!, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(secretUser, bridgeCmdLine!, StringComparison.Ordinal);
+            Assert.DoesNotContain(secretPass, bridgeCmdLine!, StringComparison.Ordinal);
+
+            // Verify current user can still connect to the ACL-hardened UI telemetry pipe and receive status
+            string pipeName = BridgeIpcCodec.GetUiPipeName(bridgePid);
+            using var uiClient = new NamedPipeClientStream(".", pipeName, PipeDirection.In, PipeOptions.Asynchronous);
+            await uiClient.ConnectAsync(3000);
+
+            bool sawAlive = false;
+            bool sawExited = false;
+            using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            Task readTask = Task.Run(async () =>
+            {
+                using var reader = new StreamReader(uiClient, Encoding.UTF8, leaveOpen: true);
+                while (!readCts.IsCancellationRequested)
+                {
+                    string? line = await reader.ReadLineAsync(readCts.Token);
+                    if (line is null) break;
+                    UiBridgeEnvelope? env = BridgeIpcCodec.DeserializeLine<UiBridgeEnvelope>(line);
+                    if (env?.Type == "status" && env.Status is not null)
+                    {
+                        if (env.Status.Alive) sawAlive = true;
+                        else sawExited = true;
+                    }
+                }
+            }, readCts.Token);
+
+            DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+            while (!sawAlive && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(30);
+            }
+            Assert.True(sawAlive, "Current user should receive Alive=true on ACL-hardened UI pipe.");
+
+            File.WriteAllText(stopFile, "stop");
+            using (var bridgeProc = Process.GetProcessById((int)bridgePid))
+            {
+                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                await bridgeProc.WaitForExitAsync(exitCts.Token);
+                Assert.Equal(0, bridgeProc.ExitCode);
+            }
+
+            try { await readTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+            Assert.True(sawExited, "Current user should receive Alive=false before Bridge exits.");
+        }
+        finally
+        {
+            try { File.WriteAllText(stopFile, "stop"); } catch { }
+            if (spawnedBridgePid != 0)
+            {
+                KillPidSafe((int)spawnedBridgePid);
+            }
+            DeleteDirSafe(tempRoot);
+        }
+    }
+
+    [Fact]
     public void ChromiumBrowserIsolation_DetectsBrowsersAndAppendsUserDataDir()
     {
         Assert.True(AppProfile.IsChromiumBrowserExe(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"));

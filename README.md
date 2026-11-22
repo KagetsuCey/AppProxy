@@ -5,25 +5,34 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
 ## 核心特性
 
 - **独立后台桥接进程（`AppProxy.Bridge.exe`）与自动生命周期回收**：
-  - 每个启动的应用会话拥有独立的无窗口后台桥接进程 `AppProxy.Bridge.exe`（脱离 UI 进程树运行）。
-  - **退出/关闭 `AppProxy.UI.exe` 不会中断已启动应用的代理连接与 Fake-IP DNS 解析**；重新打开 UI 界面可自动重新连接运行中的后台桥接并恢复实时监控。
-  - 通过 **Windows Job Object + IOCP (`JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO`)** 绑定目标应用及其全部派生子进程树，当目标应用及其所有子进程退出后，对应的 `AppProxy.Bridge.exe` 自动释放回环端口与共享内存并退出。
-- **双架构支持 (`x86` / `x64`) + 自动子进程继承**：
+  - 每个启动的应用会话拥有独立的无窗口后台桥接进程 `AppProxy.Bridge.exe`（通过 `CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP` 脱离 UI 进程树运行）。
+  - **退出/关闭 `AppProxy.UI.exe` 不会中断已启动应用的代理连接与 Fake-IP DNS 解析**；重新打开 UI 界面可自动重新发现运行中的后台桥接并恢复实时监控快照。
+  - 通过 **Windows Job Object + IOCP (`JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO`) + 退出看门狗** 绑定目标应用及其全部派生子进程树（Hook 层自动剥离 `CREATE_BREAKAWAY_FROM_JOB`）。当主目标进程退出后，自动识别并清理残余的 `ELECTRON_RUN_AS_NODE`、Chromium `--type=renderer/gpu/utility` 子进程及 `crashpad_handler` 等孤儿进程（同时保留具备可见 GUI 窗口的自重启子进程），随后释放回环端口与共享内存并优雅退出。
+- **双架构支持 (`x86` / `x64`) + ACG/CFG 安全注入与子进程继承**：
   - 使用 `IsWow64Process2` 自动识别实际运行位数（兼容 `.NET AnyCPU` 与跨架构子进程）。
-  - 通过 OEP (`EB FE`) 捕获 + `CreateRemoteThread(LoadLibraryW)` 完成零 Loader-Lock 死锁注入。
-  - Hook `CreateProcessW` / `CreateProcessA` / `CreateProcessAsUserW` / `ResumeThread`，支持父进程到子进程的同构或跨架构自动注入继承。
+  - 通过 **Early-Bird User APC (`QueueUserAPC(LoadLibraryW)`)** 在主线程恢复进入 OEP 前完成注入（仅分配 `PAGE_READWRITE` 内存，不修改 `.text` 为 RWX，兼容 ACG / CFG），并在创建目标及子进程时显式剥离 CIG / ACG 等缓解策略，支持注入 Edge 等微软签名与沙盒系应用。
+  - Hook `CreateProcessW` / `CreateProcessA` / `CreateProcessAsUserW` / `ResumeThread` 与 `LoadLibrary*`（支持延迟加载模块补装 Hook），实现父子进程同构或跨架构自动注入继承。
+- **系统代理隔离（`IgnoreSystemProxy`，默认开启）**：
+  - 确保通过 AppProxy 启动的应用**不受本机全局系统代理（如 Clash / v2rayN）或代理环境变量干扰**，流量严格走 AppProxy 指定代理节点。
+  - 启动与注入阶段同步清除 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `FTP_PROXY` / `SOCKS_PROXY`（含小写变体）并在派生子进程环境块中持续剥离。
+  - 原生层 Hook `kernelbase` 注册表查询（`RegQueryValueEx*` / `RegGetValue*`，拦截 `Internet Settings` 及 `DefaultConnectionSettings` 二进制配置）、**WinINet**（`InternetOpen*` / `InternetQueryOption*`）与 **WinHTTP**（`WinHttpOpen`、`WinHttpGetIEProxyConfigForCurrentUser`、`WinHttpGetProxyForUrl`、`WinHttpReadProxySettings` 等 9 个 API），向目标进程统一返回直连配置，使连接交由 Winsock Hook 透明接管。
 - **Winsock & 异步 Socket 拦截**：
   - Hook `connect`、`WSAConnect`、`WSAConnectByNameW/A`、`WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER -> ConnectEx)`、`getpeername`、`closesocket`。
   - 兼容阻塞、非阻塞（`FIONBIO`）、`WSAEventSelect` 及 `ConnectEx` + IOCP 模型（支持 Chromium/Electron、Go、Node.js、Python、.NET、cURL、Git 等）。
-  - 针对 Fake-IP 与远程 DNS 模式下的 UDP/QUIC 发包返回快速失败（`WSAECONNREFUSED`），促使浏览器迅速回退至 TCP HTTPS。
-- **远程 DNS 解析 / Fake-IP (`198.18.0.0/15`)**：
+  - 针对 Fake-IP 与远程 DNS 模式下的 UDP/QUIC 发包及 UDP:53 返回快速失败（`WSAECONNREFUSED`），促使浏览器迅速回退至 TCP HTTPS。
+- **远程 DNS 解析 / Fake-IP (`198.18.0.0/15` 与 `fd98:0018::/96`)**：
   - Hook `getaddrinfo`、`GetAddrInfoW`、`GetAddrInfoExW`、`gethostbyname` 与对应的 `freeaddrinfo*`。
   - 域名在本地分配虚拟 IP 并写入跨进程共享内存，实际隧道建立时由独立桥接器还原原始域名发送给代理服务器（零本地 DNS 泄漏）。
+  - 进程内 Fake-IP 缓存命中时执行 O(1) 跨进程共享内存一致性校验；环形缓冲（16,384 槽位）回绕时基于 `lastUsedTick` 采用窗口近似 LRU 驱逐，避免热点域名被立刻覆盖或命中陈旧缓存。
+- **安全通信与稳定性加固**：
+  - UI 启动后台桥接进程时通过**一次性匿名 Stdin 管道 (`--launch-stdin`)** 传递启动配置，代理用户名与密码不出现在常驻进程命令行中。
+  - UI 遥测命名管道（`AppProxy_Ui_<pid>`）通过 `PipeSecurity` ACL 限制仅当前登录用户可连接，防止同机其他用户窃听连接目标与事件日志。
+  - UI 监控面板采用有序 FIFO 队列在 UI 线程统一批量刷盘连接更新与桥接断开事件，避免高并发下的跨线程竞争。
 - **C# .NET 8 WPF Fluent UI**：
-  - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`）自动提取图标、启动参数、工作目录与 PE 架构识别，快速切换代理与一键注入启动；支持为任意应用生成桌面快捷方式，无需打开 UI 界面即可双击直接以代理模式启动。
+  - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`，自动解析 Squirrel/Electron `Update.exe` 目标）自动提取图标、启动参数、工作目录与 PE 架构识别；支持**最大运行实例数上限**配置、**Chromium 系浏览器隔离 Profile**（自动追加 `--user-data-dir`）与**一键生成桌面快捷方式**（免打开 UI 双击直启代理）。
   - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）及实时握手延迟测速。
   - 实时监控：通过命名管道聚合所有活跃后台桥接的连接目标、Fake-IP、代理状态、握手延迟、实时上传/下载字节统计及进程注入/DNS 事件日志。
-  - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）与崩溃日志（`data\logs\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`，也不读取或迁移旧路径配置），支持便携压缩包解压即用与安装包跨目录迁移。
+  - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、启动互斥锁（`data\locks\`）与崩溃日志（`data\logs\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移。
 
 ## 目录结构
 
@@ -33,32 +42,87 @@ AppProxy.sln
 │   ├── native/
 │   │   ├── AppProxy.Common/      # 跨进程 Shared Memory 与 Named Pipe 日志协议头文件
 │   │   ├── AppProxy.Hook/        # x86/x64 注入 Hook DLL (MinHook + /MT 静态运行时)
-│   │   └── AppProxy.Injector/    # x86/x64 挂起注入器与跨架构委派入口
-│   ├── AppProxy.Core/            # 共享模型、AppPaths、隧道客户端、共享内存与 Job Object 生命周期跟踪
+│   │   └── AppProxy.Injector/    # x86/x64 挂起 APC 注入器与跨架构委派入口
+│   ├── AppProxy.Core/            # 共享模型、AppPaths、隧道客户端、共享内存、实例计数与 Job Object 生命周期跟踪
 │   ├── AppProxy.Bridge/          # 独立无窗口后台代理桥接进程 (AppProxy.Bridge.exe)
 │   └── AppProxy.UI/              # .NET 8 WPF-UI 桌面界面与多桥接实例实时监控面板
 ├── installer/
 │   └── AppProxy.iss              # Inno Setup 7 安装包脚本（原生 x64 安装器、免 UAC 用户安装 + 系统级目录权限）
 ├── tests/
-│   └── AppProxy.Tests/           # xUnit 单元测试与端到端 Bridge / Job Object 集成测试
+│   └── AppProxy.Tests/           # xUnit 单元测试与端到端 Bridge / Job Object / 系统代理隔离 / 稳定性安全集成测试
 └── scripts/
-    ├── build.bat                 # 一键构建 x86/x64 原生模块、Bridge、UI 与运行测试
+    ├── build.bat                 # 一键构建 x86/x64 原生模块、Bridge、UI 与运行全部自动化测试
     ├── package.bat               # 一键自包含打包（便携版 ZIP + Inno Setup 安装包 .exe）
     └── package.ps1               # Release 打包、校验与 SHA-256 生成主脚本
 ```
+
+## 重要操作指南
+
+### 1. 日常使用操作
+
+1. **配置代理节点**：
+   - 在「代理节点」页面添加 SOCKS5 / HTTP / HTTPS 节点（可选用户名/密码），点击测速按钮验证节点连通性与握手延迟。
+2. **添加目标应用**：
+   - 支持直接将 `.exe` 或桌面/开始菜单 `.lnk` 快捷方式拖放到应用列表（自动解析目标路径、参数、工作目录、图标与 x86/x64 架构；自动识别 Squirrel/Electron 的 `Update.exe --processStart`）。
+   - 为应用绑定目标代理节点（或选择 `Direct` 直连）。
+3. **关键应用选项说明**：
+   - **忽略系统代理（`IgnoreSystemProxy`，推荐保持开启）**：即使 Windows 当前开启了全局系统代理或配置了 `HTTP_PROXY` 环境变量，经 AppProxy 启动的应用也会忽略它们，只走所选 AppProxy 代理节点。
+   - **远程 DNS（`RemoteDns`，推荐保持开启）**：启用 Fake-IP，防止本地 DNS 泄漏。
+   - **绕过局域网（`BypassLan`）**：私网与回环地址直连，避免内网访问失败（Fake-IP 网段永远不会被绕过）。
+   - **注入子进程（`InjectChildren`）**：自动向应用派生的所有子进程（含跨位数子进程）继承代理拦截。
+   - **最大运行实例数（`MaxInstances`，默认 `1`）**：防止单实例应用在已有后台进程运行时重复启动导致接管失效；无论实例是否通过代理启动均计入总数，超限时阻止启动并提示。
+   - **浏览器数据目录隔离（`IsolateProfileDir`）**：对 Edge / Chrome / Brave / Vivaldi / Opera / Chromium 默认开启，自动附加 `--user-data-dir="<AppProxyDir>\data\profiles\<AppName>"`，避免与普通未代理浏览器进程合并。
+4. **免 UI 桌面快捷方式启动**：
+   - 在应用卡片点击「创建桌面快捷方式」，会在桌面生成 `<应用名> (AppProxy).lnk`，其目标指向 `AppProxy.Bridge.exe --launch-app-id <AppGuid>`。
+   - 双击该快捷方式无需打开 `AppProxy.UI.exe`，即可直接读取 `data\config.json` 最新配置并拉起独立代理桥接；后续随时打开 `AppProxy.UI.exe` 也会自动发现并接管监控。
+5. **独立后台运行与热重连**：
+   - 启动应用后可直接关闭 `AppProxy.UI.exe`，后台 `AppProxy.Bridge.exe` 继续维持代理转发；当目标应用及其子进程树全部关闭后，对应桥接进程自动退出并释放资源。
+
+### 2. 桥接进程启动模式说明（开发者/高级用户）
+
+`AppProxy.Bridge.exe` 支持三种启动入口：
+
+- `--launch-stdin`（**UI 默认模式，推荐**）：由父进程通过匿名 Stdin 管道写入单行 UTF-8 `BridgeLaunchRequest` JSON 并关闭写端，Stdout 返回单行 `BridgeHandshakeResponse` JSON；避免代理账号密码出现在进程命令行中。
+- `--launch-app-id <Guid>`（**桌面快捷方式模式**）：从程序同级 `data\config.json` 读取指定 `AppProfile` 与绑定代理配置启动，失败时弹出桌面错误提示框。
+- `--launch-b64 <Base64Json>`（**兼容/脚本模式**）：保留用于自动化测试或脚本兼容（注意：该方式会将配置编码放在命令行参数中，不建议在包含代理密码的生产场景使用）。
+
+### 3. 数据备份、迁移与卸载清理
+
+- **绿色便携迁移**：直接复制整个 `AppProxy\` 文件夹（含 `data\` 子目录）到其他路径或机器即可完整保留配置与浏览器隔离数据。
+- **快速定位配置与日志**：在 UI 中点击「打开数据目录」或查看：
+  - 配置文件：`data\config.json`
+  - 浏览器隔离数据：`data\profiles\`
+  - 崩溃日志：`data\logs\AppProxy.UI.crash.log`、`data\logs\AppProxy.Bridge.crash.log`
+- **安装包卸载数据控制**：通过 Inno Setup 卸载程序卸载时，默认保留 `data\` 并交互询问是否删除；静默卸载若需一并清除用户数据，可附加 `/PURGEDATA` 参数。
+
+### 4. 常见问题排查
+
+- **应用启动后秒退或流量未被捕获**：多为单实例应用（如未隔离的浏览器、Electron/聊天客户端）后台托盘已有未注入实例并接管了新窗口。请先完全退出目标应用的所有后台进程，或为 Chromium 系浏览器开启「隔离 Profile 目录」。
+- **本机同时开启了其他全局代理工具（如 Clash/v2rayN）**：确认对应应用的「忽略系统代理（`IgnoreSystemProxy`）」已勾选；可在监控面板事件日志中确认 Hook 加载消息包含 `system-proxy-isolated`。
+- **排查 Bridge 进程命令行是否泄露凭据**：在 PowerShell 中运行：
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='AppProxy.Bridge.exe'" | Select-Object ProcessId, CommandLine
+  ```
+  经 UI 启动的桥接进程命令行应仅包含 `--launch-stdin`，不含代理账号密码。
 
 ## 构建与打包
 
 ### 环境要求
 - Windows 10 / 11 (x64)
-- Visual Studio 2022（需包含 **使用 C++ 的桌面开发** x86/x64 工具链 与 **.NET 桌面开发 / .NET 8 SDK**）
+- Visual Studio 2022+（需包含 **使用 C++ 的桌面开发** x86/x64 工具链 与 **.NET 桌面开发 / .NET 8 SDK**）
 - *可选（仅生成 `.exe` 安装包时需要）*：[Inno Setup 7](https://jrsoftware.org/isinfo.php)（`ISCC.exe`，支持 `winget install --id JRSoftware.InnoSetup.7 -e -s winget`、`scoop install inno-setup` 或放置到 `tools\InnoSetup7\ISCC.exe`）
 
-### 开发构建与测试
-在工作区根目录运行：
+### 开发构建与自动化测试
+在工作区根目录运行（自动编译 Win32/x64 原生 Hook & Injector、.NET 8 Bridge & UI，并执行全部 xUnit 测试）：
 
 ```bat
 scripts\build.bat
+```
+
+若仅需定向回归核心集成测试（需先完成至少一次原生 x86/x64 构建）：
+
+```powershell
+dotnet test tests\AppProxy.Tests\AppProxy.Tests.csproj -c Release --filter "FullyQualifiedName~SystemProxyIsolationTests|FullyQualifiedName~BridgeLifecycleTests|FullyQualifiedName~StabilityAndSecurityTests|FullyQualifiedName~LocalProxyBridgeTests"
 ```
 
 ### 发布打包（便携版 ZIP + 安装包）
@@ -68,14 +132,21 @@ scripts\build.bat
 scripts\package.bat
 ```
 
+或使用 PowerShell 脚本按需指定参数（例如跳过安装包仅生成便携版、指定版本号）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -PortableOnly
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
+```
+
 打包完成后，将在 `artifacts\release\` 生成：
 - `AppProxy-v<Version>-win-x64-portable.zip`：绿色便携版压缩包，解压 `AppProxy\` 文件夹即可运行，数据自动保存在同级 `data\` 目录。
-- `AppProxy-v<Version>-win-x64-setup.exe`：Inno Setup 7 原生 64 位安装包（需安装 Inno Setup 7；若仅需便携包可加传 `-PortableOnly`）。默认免 UAC 安装到 `%LocalAppData%\Programs\AppProxy\`，支持自定义路径或切换为所有用户安装（自动为 `{app}\data\` 配置普通用户写权限）；覆盖升级保留 `data\` 数据。
+- `AppProxy-v<Version>-win-x64-setup.exe`：Inno Setup 7 原生 64 位安装包（需安装 Inno Setup 7）。默认免 UAC 安装到 `%LocalAppData%\Programs\AppProxy\`，支持自定义路径或切换为所有用户安装（自动为 `{app}\data\` 配置普通用户写权限）；覆盖升级保留 `data\` 数据。
 - `SHA256SUMS.txt`：发布产物 SHA-256 校验清单。
 
 首次编译 `AppProxy.Hook.vcxproj` 时，MSBuild 会自动从 GitHub 下载并解压 `MinHook v1.3.3` 源码到 `third_party\minhook\`（若无法访问 GitHub，可手动下载 `TsudaKageyu/minhook` v1.3.3 解压至 `third_party\minhook\minhook-1.3.3\`）。
 
 ## 已知限制
 
-- 受 Windows 系统安全机制保护的 **Protected Process Light (PPL)** 系统进程或 **UWP / Microsoft Store AppContainer** 沙盒应用会拦截用户态 `CreateRemoteThread` 注入。
+- 受 Windows 系统安全机制保护的 **Protected Process Light (PPL)** 系统进程或 **UWP / Microsoft Store AppContainer** 沙盒应用会拦截用户态注入。
 - 当前版本转发 TCP 流量；UDP 流量不走代理隧道。

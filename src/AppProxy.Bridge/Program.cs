@@ -22,6 +22,7 @@ internal static class Program
         {
             string? launchB64 = null;
             string? launchAppIdRaw = null;
+            bool launchFromStdin = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -32,6 +33,10 @@ internal static class Program
                 else if (args[i] == "--launch-app-id" && i + 1 < args.Length)
                 {
                     launchAppIdRaw = args[++i];
+                }
+                else if (args[i] == "--launch-stdin")
+                {
+                    launchFromStdin = true;
                 }
             }
 
@@ -77,13 +82,24 @@ internal static class Program
                     Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
                 };
             }
+            else if (launchFromStdin)
+            {
+                string? stdinJson = await ReadLaunchPayloadFromStdinAsync();
+                if (string.IsNullOrWhiteSpace(stdinJson))
+                {
+                    ReportError("Empty launch request payload on stdin (--launch-stdin).", directShortcutMode);
+                    return 2;
+                }
+
+                request = BridgeIpcCodec.DeserializeLine<BridgeLaunchRequest>(stdinJson.Trim());
+            }
             else if (!string.IsNullOrWhiteSpace(launchB64))
             {
                 request = BridgeIpcCodec.DecodeLaunchRequestBase64(launchB64);
             }
             else
             {
-                ReportError("Missing --launch-b64 or --launch-app-id argument.", directShortcutMode);
+                ReportError("Missing --launch-stdin, --launch-b64, or --launch-app-id argument.", directShortcutMode);
                 return 2;
             }
 
@@ -157,6 +173,32 @@ internal static class Program
         catch
         {
         }
+    }
+
+    private const int MaxStdinPayloadBytes = 256 * 1024;
+
+    private static async Task<string?> ReadLaunchPayloadFromStdinAsync()
+    {
+        using Stream stdin = Console.OpenStandardInput();
+        using var ms = new MemoryStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+
+        while (true)
+        {
+            int n = await stdin.ReadAsync(buf.AsMemory(0, buf.Length));
+            if (n <= 0) break;
+
+            total += n;
+            if (total > MaxStdinPayloadBytes)
+            {
+                throw new InvalidOperationException($"Launch request payload on stdin exceeded {MaxStdinPayloadBytes} bytes.");
+            }
+
+            ms.Write(buf, 0, n);
+        }
+
+        return total == 0 ? null : Encoding.UTF8.GetString(ms.GetBuffer(), 0, total);
     }
 
     private static void WriteHandshakeAndCloseStdout(BridgeHandshakeResponse response)

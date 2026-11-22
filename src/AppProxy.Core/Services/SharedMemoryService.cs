@@ -157,6 +157,34 @@ public sealed class SharedMemoryService : IDisposable
         return assigned;
     }
 
+    public void OverwriteFakeIpSlotForTest(uint fakeIpHostOrder, string newDomain)
+    {
+        if (fakeIpHostOrder < FakeIpBase) throw new ArgumentOutOfRangeException(nameof(fakeIpHostOrder));
+        uint slot = fakeIpHostOrder - FakeIpBase;
+        if (slot >= MaxFakeIps) throw new ArgumentOutOfRangeException(nameof(fakeIpHostOrder));
+
+        byte[] domainBytes = Encoding.UTF8.GetBytes(newDomain.TrimEnd('.').ToLowerInvariant());
+        WithMutex(() =>
+        {
+            int entryOff = FakeIpsOffset + ((int)slot * FakeIpEntrySize);
+            _view.Write(entryOff, fakeIpHostOrder);
+            _view.Write(entryOff + 4, (uint)Environment.TickCount);
+            byte[] buf = new byte[256];
+            Array.Copy(domainBytes, buf, Math.Min(domainBytes.Length, 255));
+            _view.WriteArray(entryOff + 8, buf, 0, 256);
+        });
+    }
+
+    public string? LookupFakeDomainForTest(uint fakeIpHostOrder)
+    {
+        string? domain = null;
+        WithMutex(() =>
+        {
+            domain = LookupFakeDomainUnlocked(fakeIpHostOrder);
+        });
+        return domain;
+    }
+
     public void WriteNatEntryForTest(ushort localPort, byte ipFamily, NativeTargetAddrType targetType, uint sessionId, uint pid, byte[] addrBytes, ushort targetPort)
     {
         WithMutex(() =>

@@ -68,16 +68,17 @@ public sealed class AppLauncherService : IDisposable
             Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
         };
 
-        string payloadB64 = BridgeIpcCodec.EncodeLaunchRequestBase64(request);
+        string requestJson = BridgeIpcCodec.SerializeLine(request);
         uint spawnedBridgePid;
         string handshakeLine;
         try
         {
             (spawnedBridgePid, handshakeLine) = await DetachedProcessLauncher.StartDetachedAndReadFirstLineAsync(
                 bridgeExePath,
-                $"--launch-b64 {payloadB64}",
+                "--launch-stdin",
                 baseDir,
-                TimeSpan.FromSeconds(12));
+                TimeSpan.FromSeconds(12),
+                stdinPayload: requestJson);
         }
         catch (Exception ex)
         {

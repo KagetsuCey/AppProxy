@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -613,6 +615,44 @@ internal sealed class BridgeDaemonHost : IDisposable
         }
     }
 
+    private static NamedPipeServerStream CreateUiTelemetryPipeServer(string pipeName)
+    {
+        try
+        {
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            SecurityIdentifier? currentUser = identity.User;
+            if (currentUser is not null)
+            {
+                var security = new PipeSecurity();
+                security.AddAccessRule(new PipeAccessRule(
+                    currentUser,
+                    PipeAccessRights.FullControl,
+                    AccessControlType.Allow));
+
+                return NamedPipeServerStreamAcl.Create(
+                    pipeName,
+                    PipeDirection.Out,
+                    NamedPipeServerStream.MaxAllowedServerInstances,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous,
+                    inBufferSize: 0,
+                    outBufferSize: 0,
+                    security);
+            }
+        }
+        catch
+        {
+            // Fall back to default pipe security if current WindowsIdentity SID cannot be resolved.
+        }
+
+        return new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.Out,
+            NamedPipeServerStream.MaxAllowedServerInstances,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+    }
+
     private void StartUiTelemetryPipeServer()
     {
         string pipeName = BridgeIpcCodec.GetUiPipeName(_bridgePid);
@@ -624,12 +664,7 @@ internal sealed class BridgeDaemonHost : IDisposable
                 NamedPipeServerStream? server = null;
                 try
                 {
-                    server = new NamedPipeServerStream(
-                        pipeName,
-                        PipeDirection.Out,
-                        NamedPipeServerStream.MaxAllowedServerInstances,
-                        PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
+                    server = CreateUiTelemetryPipeServer(pipeName);
 
                     await server.WaitForConnectionAsync(ct);
                     var sub = new UiSubscriber(server);
