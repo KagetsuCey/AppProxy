@@ -1,9 +1,9 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 public sealed record ResolvedAppTarget(
     bool Ok,

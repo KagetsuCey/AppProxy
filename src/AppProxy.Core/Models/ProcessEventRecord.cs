@@ -1,4 +1,4 @@
-namespace AppProxy.UI.Models;
+namespace AppProxy.Core.Models;
 
 public sealed class ProcessEventRecord
 {

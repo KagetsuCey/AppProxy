@@ -2,7 +2,7 @@ using System.IO.MemoryMappedFiles;
 using System.Net;
 using System.Text;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 [Flags]
 public enum NativeSessionFlags : uint

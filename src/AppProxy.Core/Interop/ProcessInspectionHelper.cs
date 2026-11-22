@@ -2,7 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace AppProxy.UI.Interop;
+namespace AppProxy.Core.Interop;
 
 public enum ProcessLiveState
 {

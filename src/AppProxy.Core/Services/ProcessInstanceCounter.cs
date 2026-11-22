@@ -2,9 +2,9 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using AppProxy.UI.Interop;
+using AppProxy.Core.Interop;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 public sealed record RunningProcessEntry(
     uint ProcessId,

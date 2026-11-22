@@ -3,8 +3,8 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using AppProxy.UI.Models;
-using AppProxy.UI.Services;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 using Xunit;
 
 namespace AppProxy.Tests;

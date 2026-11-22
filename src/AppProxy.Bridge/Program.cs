@@ -1,8 +1,8 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using AppProxy.UI.Models;
-using AppProxy.UI.Services;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 
 namespace AppProxy.Bridge;
 

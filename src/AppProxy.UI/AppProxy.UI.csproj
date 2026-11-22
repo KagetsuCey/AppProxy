@@ -10,7 +10,6 @@
     <ApplicationTitle>AppProxy</ApplicationTitle>
     <AssemblyName>AppProxy.UI</AssemblyName>
     <RootNamespace>AppProxy.UI</RootNamespace>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\AppProxy.ico</ApplicationIcon>
   </PropertyGroup>
 

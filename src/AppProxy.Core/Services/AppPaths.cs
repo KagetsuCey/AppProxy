@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 public static class AppPaths
 {

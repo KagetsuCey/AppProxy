@@ -5,9 +5,9 @@ using System.IO;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 public sealed class SessionContext
 {

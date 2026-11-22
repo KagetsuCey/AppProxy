@@ -3,9 +3,9 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 public static class Socks5TunnelClient
 {

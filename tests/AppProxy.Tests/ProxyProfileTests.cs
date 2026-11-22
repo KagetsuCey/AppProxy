@@ -1,4 +1,4 @@
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
 using Xunit;
 
 namespace AppProxy.Tests;

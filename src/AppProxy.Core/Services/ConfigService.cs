@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
 
-namespace AppProxy.UI.Services;
+namespace AppProxy.Core.Services;
 
 public sealed class ConfigService
 {

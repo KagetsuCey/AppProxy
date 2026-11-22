@@ -3,9 +3,9 @@ using System.IO;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
-using AppProxy.UI.Interop;
-using AppProxy.UI.Models;
-using AppProxy.UI.Services;
+using AppProxy.Core.Interop;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 using Xunit;
 
 namespace AppProxy.Tests;

@@ -5,8 +5,8 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using AppProxy.UI.Models;
-using AppProxy.UI.Services;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 using Microsoft.Win32;
 using Xunit;
 

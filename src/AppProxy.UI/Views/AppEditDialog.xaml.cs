@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 using AppProxy.UI.Services;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;

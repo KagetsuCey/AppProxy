@@ -1,5 +1,5 @@
 using System.IO;
-using AppProxy.UI.Services;
+using AppProxy.Core.Services;
 using Xunit;
 
 namespace AppProxy.Tests;

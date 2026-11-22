@@ -4,7 +4,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using AppProxy.UI.Services;
+using AppProxy.Core.Services;
 using AppProxy.UI.ViewModels;
 using Xunit;
 

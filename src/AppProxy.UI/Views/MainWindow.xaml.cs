@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
-using AppProxy.UI.Models;
+using AppProxy.Core.Models;
 using Wpf.Ui.Controls;
 
 namespace AppProxy.UI.Views;

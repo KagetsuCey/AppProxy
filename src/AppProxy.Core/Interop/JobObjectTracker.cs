@@ -4,10 +4,10 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using AppProxy.UI.Services;
+using AppProxy.Core.Services;
 using Microsoft.Win32.SafeHandles;
 
-namespace AppProxy.UI.Interop;
+namespace AppProxy.Core.Interop;
 
 public sealed record JobTargetMonitorOptions
 {

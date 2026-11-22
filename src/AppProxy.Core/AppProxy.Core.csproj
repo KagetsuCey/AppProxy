@@ -2,12 +2,10 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>AppProxy.UI</RootNamespace>
+    <RootNamespace>AppProxy.Core</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using AppProxy.Core.Services;
 using AppProxy.UI.Services;
 using AppProxy.UI.ViewModels;
 using Wpf.Ui.Appearance;

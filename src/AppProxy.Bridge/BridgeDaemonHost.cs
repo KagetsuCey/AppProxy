@@ -7,9 +7,9 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AppProxy.UI.Interop;
-using AppProxy.UI.Models;
-using AppProxy.UI.Services;
+using AppProxy.Core.Interop;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 
 namespace AppProxy.Bridge;
 
@@ -210,7 +210,7 @@ internal sealed class BridgeDaemonHost : IDisposable
         }
 
         string nativeDir = AppPaths.GetNativeDirectory();
-        string detectedArch = DetectPeArchitecture(_request.ExePath);
+        string detectedArch = PeArchitectureDetector.DetectArchitecture(_request.ExePath);
         string injectorName = detectedArch == "x86" ? "AppProxy.Injector.x86.exe" : "AppProxy.Injector.x64.exe";
         string injectorPath = Path.Combine(nativeDir, injectorName);
 
@@ -908,81 +908,6 @@ internal sealed class BridgeDaemonHost : IDisposable
         }
         catch
         {
-        }
-    }
-
-    private static string DetectPeArchitecture(string exePath)
-    {
-        try
-        {
-            using var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var br = new BinaryReader(fs);
-            if (fs.Length < 64 || br.ReadUInt16() != 0x5A4D) return "x64";
-
-            fs.Seek(0x3C, SeekOrigin.Begin);
-            int peOffset = br.ReadInt32();
-            if (peOffset <= 0 || peOffset + 24 > fs.Length) return "x64";
-
-            fs.Seek(peOffset, SeekOrigin.Begin);
-            if (br.ReadUInt32() != 0x00004550) return "x64";
-
-            ushort machine = br.ReadUInt16();
-            if (machine == 0x8664 || machine == 0xAA64) return "x64";
-            if (machine != 0x014C) return "x64";
-
-            ushort numberOfSections = br.ReadUInt16();
-            fs.Seek(12, SeekOrigin.Current);
-            ushort sizeOfOptionalHeader = br.ReadUInt16();
-            br.ReadUInt16();
-
-            long optionalStart = fs.Position;
-            if (sizeOfOptionalHeader >= 216 && optionalStart + sizeOfOptionalHeader <= fs.Length)
-            {
-                if (br.ReadUInt16() == 0x010B)
-                {
-                    fs.Seek(optionalStart + 92, SeekOrigin.Begin);
-                    if (br.ReadUInt32() > 14)
-                    {
-                        fs.Seek(optionalStart + 96 + (14 * 8), SeekOrigin.Begin);
-                        uint clrRva = br.ReadUInt32();
-                        uint clrSize = br.ReadUInt32();
-                        if (clrRva != 0 && clrSize >= 72)
-                        {
-                            long sectionsStart = optionalStart + sizeOfOptionalHeader;
-                            for (int i = 0; i < numberOfSections; i++)
-                            {
-                                long secOffset = sectionsStart + (i * 40L);
-                                if (secOffset + 40 > fs.Length) break;
-                                fs.Seek(secOffset + 8, SeekOrigin.Begin);
-                                uint virtualSize = br.ReadUInt32();
-                                uint virtualAddr = br.ReadUInt32();
-                                uint rawSize = br.ReadUInt32();
-                                uint rawPtr = br.ReadUInt32();
-                                uint span = Math.Max(virtualSize, rawSize);
-                                if (clrRva >= virtualAddr && clrRva < virtualAddr + span)
-                                {
-                                    long clrFileOffset = rawPtr + (clrRva - virtualAddr);
-                                    if (clrFileOffset > 0 && clrFileOffset + 20 <= fs.Length)
-                                    {
-                                        fs.Seek(clrFileOffset + 16, SeekOrigin.Begin);
-                                        uint corFlags = br.ReadUInt32();
-                                        if ((corFlags & 0x00000002u) == 0 && Environment.Is64BitOperatingSystem)
-                                        {
-                                            return "x64";
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return "x86";
-        }
-        catch
-        {
-            return "x64";
         }
     }
 

@@ -1,6 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace AppProxy.UI.Models;
+namespace AppProxy.Core.Models;
 
 public partial class ConnectionRecord : ObservableObject
 {

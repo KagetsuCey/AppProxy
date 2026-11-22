@@ -1,6 +1,6 @@
 using System.IO;
-using AppProxy.UI.Models;
-using AppProxy.UI.Services;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 using Xunit;
 
 namespace AppProxy.Tests;

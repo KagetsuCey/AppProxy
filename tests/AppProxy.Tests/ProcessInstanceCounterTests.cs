@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
-using AppProxy.UI.Interop;
-using AppProxy.UI.Models;
+using AppProxy.Core.Interop;
+using AppProxy.Core.Models;
+using AppProxy.Core.Services;
 using AppProxy.UI.Services;
 using Xunit;
 

@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace AppProxy.UI.Models;
+namespace AppProxy.Core.Models;
 
 public enum ProxyProtocol
 {

@@ -1,9 +1,8 @@
 using System.IO;
 using System.Text.Json.Serialization;
-using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace AppProxy.UI.Models;
+namespace AppProxy.Core.Models;
 
 public partial class AppProfile : ObservableObject
 {
@@ -74,7 +73,7 @@ public partial class AppProfile : ObservableObject
 
     [ObservableProperty]
     [property: JsonIgnore]
-    private ImageSource? _icon;
+    private object? _icon;
 
     [ObservableProperty]
     [property: JsonIgnore]
