@@ -9,11 +9,18 @@ public partial class ProxyEditDialog : FluentWindow
 {
     public ProxyProfile ResultProxy { get; private set; }
 
-    public ProxyEditDialog(ProxyProfile? existing)
+    public ProxyEditDialog(ProxyProfile? existing, bool isCloneMode = false)
     {
         InitializeComponent();
 
         ResultProxy = existing?.Clone() ?? new ProxyProfile();
+
+        if (isCloneMode)
+        {
+            Title = "克隆代理节点";
+            DialogTitleBar.Title = "克隆代理节点";
+            BannerTitleText.Text = "基于已有节点克隆新配置";
+        }
 
         NameBox.Text = ResultProxy.Name;
         HostBox.Text = ResultProxy.Host;
@@ -28,6 +35,15 @@ public partial class ProxyEditDialog : FluentWindow
             ProxyProtocol.Https => 2,
             _ => 0
         };
+
+        if (isCloneMode)
+        {
+            Loaded += (_, _) =>
+            {
+                NameBox.Focus();
+                NameBox.SelectAll();
+            };
+        }
     }
 
     private void OnSave(object sender, RoutedEventArgs e)

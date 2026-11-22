@@ -923,6 +923,12 @@
                                                            Margin="0,0,6,0"
                                                            Command="{Binding DataContext.TestProxyCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}" />
+                                                <ui:Button Icon="{ui:SymbolIcon Copy24}"
+                                                           Appearance="Secondary"
+                                                           Padding="9,7"
+                                                           Margin="0,0,6,0"
+                                                           ToolTip="克隆代理节点"
+                                                           Click="OnCloneProxyClick" />
                                                 <ui:Button Icon="{ui:SymbolIcon Edit24}"
                                                            Appearance="Secondary"
                                                            Padding="9,7"

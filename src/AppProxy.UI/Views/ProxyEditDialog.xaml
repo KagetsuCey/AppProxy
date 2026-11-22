@@ -17,7 +17,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="代理服务器配置" ShowMaximize="False" ShowMinimize="False" />
+        <ui:TitleBar x:Name="DialogTitleBar" Grid.Row="0" Title="代理服务器配置" ShowMaximize="False" ShowMinimize="False" />
 
         <ScrollViewer Grid.Row="1" Padding="20,10,20,12" VerticalScrollBarVisibility="Auto">
             <StackPanel>
@@ -37,7 +37,7 @@
                             <ui:SymbolIcon Symbol="Globe24" FontSize="18" Foreground="{DynamicResource SemanticInfoBrush}" />
                         </Border>
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="上游代理节点参数" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock x:Name="BannerTitleText" Text="上游代理节点参数" FontSize="14" FontWeight="SemiBold" />
                             <TextBlock Text="支持 SOCKS5、HTTP CONNECT 与 HTTPS TLS 隧道转发"
                                        FontSize="11.5"
                                        Margin="0,2,0,0"

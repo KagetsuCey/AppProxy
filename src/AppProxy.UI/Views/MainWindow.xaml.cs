@@ -56,6 +56,18 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void OnCloneProxyClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;
+        int sourceIndex = App.ViewModel.Proxies.IndexOf(proxy);
+        ProxyProfile draft = App.ViewModel.CreateClonedProxyDraft(proxy);
+        var dlg = new ProxyEditDialog(draft, isCloneMode: true) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            App.ViewModel.AddOrUpdateProxy(dlg.ResultProxy, insertAfterIndex: sourceIndex >= 0 ? sourceIndex : null);
+        }
+    }
+
     private void OnEditProxyClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;

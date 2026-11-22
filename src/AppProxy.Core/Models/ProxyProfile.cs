@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AppProxy.Core.Models;
@@ -98,6 +99,53 @@ public partial class ProxyProfile : ObservableObject
                 : "Bad";
         }
     }
+
+    private static readonly Regex CopySuffixRegex = new(@"\s*\(副本(?:\s+\d+)?\)$", RegexOptions.Compiled);
+
+    public static string BuildDuplicateName(string? sourceName, IEnumerable<string>? existingNames = null)
+    {
+        string raw = string.IsNullOrWhiteSpace(sourceName) ? "Proxy" : sourceName.Trim();
+        string baseName = CopySuffixRegex.Replace(raw, string.Empty).Trim();
+        if (string.IsNullOrEmpty(baseName))
+        {
+            baseName = "Proxy";
+        }
+
+        var used = existingNames is not null
+            ? new HashSet<string>(existingNames.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()), StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        string firstCandidate = $"{baseName} (副本)";
+        if (used is null || !used.Contains(firstCandidate))
+        {
+            return firstCandidate;
+        }
+
+        for (int i = 2; ; i++)
+        {
+            string candidate = $"{baseName} (副本 {i})";
+            if (!used.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    public ProxyProfile CreateDuplicate(IEnumerable<string>? existingNames = null, string? customName = null) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = string.IsNullOrWhiteSpace(customName)
+            ? BuildDuplicateName(Name, existingNames)
+            : customName.Trim(),
+        Protocol = Protocol,
+        Host = Host,
+        Port = Port,
+        Username = Username,
+        Password = Password,
+        LastLatencyMs = null,
+        LastTestStatus = "Untested",
+        IsTesting = false
+    };
 
     public ProxyProfile Clone() => new()
     {

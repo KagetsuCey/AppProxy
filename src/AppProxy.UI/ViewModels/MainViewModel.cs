@@ -413,13 +413,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public void AddOrUpdateProxy(ProxyProfile edited)
+    public ProxyProfile CreateClonedProxyDraft(ProxyProfile source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return source.CreateDuplicate(Proxies.Select(p => p.Name));
+    }
+
+    public void AddOrUpdateProxy(ProxyProfile edited, int? insertAfterIndex = null)
     {
         var existing = Proxies.FirstOrDefault(p => p.Id == edited.Id);
         if (existing is not null)
         {
             int idx = Proxies.IndexOf(existing);
             Proxies[idx] = edited;
+        }
+        else if (insertAfterIndex.HasValue && insertAfterIndex.Value >= 0 && insertAfterIndex.Value < Proxies.Count)
+        {
+            Proxies.Insert(insertAfterIndex.Value + 1, edited);
         }
         else
         {
