@@ -3,6 +3,7 @@
 #include <MinHook.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
@@ -13,6 +14,55 @@
 namespace AppProxy::Hook {
 
 namespace {
+
+// Binary-compatible superset of ADDRINFOEXW, ADDRINFOEX2W, ADDRINFOEX3,
+// ADDRINFOEX4, ADDRINFOEX5, ADDRINFOEX6, and ADDRINFOEX7 on both x86 and x64.
+// Required because Windows components like webio.dll (WinHTTP) call GetAddrInfoExW
+// with AI_EXTENDED and read ai_version / ai_fqdn / ai_ttl beyond sizeof(ADDRINFOEXW).
+struct FakeAddrInfoExNode {
+    int                 ai_flags;
+    int                 ai_family;
+    int                 ai_socktype;
+    int                 ai_protocol;
+    size_t              ai_addrlen;
+    PWSTR               ai_canonname;
+    struct sockaddr*    ai_addr;
+    void*               ai_blob;
+    size_t              ai_bloblen;
+    LPGUID              ai_provider;
+    FakeAddrInfoExNode* ai_next;
+    int                 ai_version;
+    PWSTR               ai_fqdn;
+    int                 ai_interfaceindex;
+    HANDLE              ai_resolutionhandle;
+    unsigned int        ai_ttl;
+    unsigned int        ai_numservers;
+    void*               ai_servers;
+    ULONG64             ai_responseflags;
+    ULONG64             ai_extraflags;
+    ULONG64             ai_reservedFuture[4];
+};
+
+static_assert(offsetof(FakeAddrInfoExNode, ai_next) == offsetof(ADDRINFOEXW, ai_next), "ADDRINFOEXW layout mismatch");
+static_assert(offsetof(FakeAddrInfoExNode, ai_version) == offsetof(ADDRINFOEX2W, ai_version), "ADDRINFOEX2W ai_version mismatch");
+static_assert(offsetof(FakeAddrInfoExNode, ai_fqdn) == offsetof(ADDRINFOEX2W, ai_fqdn), "ADDRINFOEX2W ai_fqdn mismatch");
+static_assert(offsetof(FakeAddrInfoExNode, ai_interfaceindex) == offsetof(ADDRINFOEX3, ai_interfaceindex), "ADDRINFOEX3 layout mismatch");
+static_assert(offsetof(FakeAddrInfoExNode, ai_resolutionhandle) == offsetof(ADDRINFOEX4, ai_resolutionhandle), "ADDRINFOEX4 layout mismatch");
+static_assert(offsetof(FakeAddrInfoExNode, ai_ttl) == offsetof(ADDRINFOEX5, ai_ttl), "ADDRINFOEX5 layout mismatch");
+#if defined(ADDRINFOEX_VERSION_6)
+static_assert(offsetof(FakeAddrInfoExNode, ai_responseflags) == offsetof(ADDRINFOEX6, ai_responseflags), "ADDRINFOEX6 layout mismatch");
+#endif
+#if defined(ADDRINFOEX_VERSION_7)
+static_assert(offsetof(FakeAddrInfoExNode, ai_extraflags) == offsetof(ADDRINFOEX7, ai_extraflags), "ADDRINFOEX7 layout mismatch");
+#endif
+
+wchar_t* DuplicateWideString(PCWSTR src) {
+    if (!src) return nullptr;
+    size_t len = std::wcslen(src) + 1;
+    auto* dst = new wchar_t[len];
+    std::memcpy(dst, src, len * sizeof(wchar_t));
+    return dst;
+}
 
 using FnGetAddrInfo = int(WSAAPI*)(PCSTR, PCSTR, const ADDRINFOA*, PADDRINFOA*);
 using FnGetAddrInfoW = int(WSAAPI*)(PCWSTR, PCWSTR, const ADDRINFOW*, PADDRINFOW*);
@@ -159,7 +209,7 @@ int WSAAPI HookedGetAddrInfo(
             node->ai_protocol = pHints ? pHints->ai_protocol : IPPROTO_TCP;
             node->ai_addrlen = saLen;
             node->ai_addr = addrMem;
-            if (hintFlags & AI_CANONNAME) {
+            if ((static_cast<uint32_t>(hintFlags) & (AI_CANONNAME | AI_FQDN)) != 0 && pNodeName) {
                 size_t len = std::strlen(pNodeName) + 1;
                 node->ai_canonname = new char[len];
                 std::memcpy(node->ai_canonname, pNodeName, len);
@@ -231,10 +281,8 @@ int WSAAPI HookedGetAddrInfoW(
             node->ai_protocol = pHints ? pHints->ai_protocol : IPPROTO_TCP;
             node->ai_addrlen = saLen;
             node->ai_addr = addrMem;
-            if (hintFlags & AI_CANONNAME) {
-                size_t len = std::wcslen(pNodeName) + 1;
-                node->ai_canonname = new wchar_t[len];
-                std::memcpy(node->ai_canonname, pNodeName, len * sizeof(wchar_t));
+            if ((static_cast<uint32_t>(hintFlags) & (AI_CANONNAME | AI_FQDN)) != 0 && pNodeName) {
+                node->ai_canonname = DuplicateWideString(pNodeName);
             }
             node->ai_next = nullptr;
 
@@ -286,6 +334,7 @@ int WSAAPI HookedGetAddrInfoExW(
 
     std::string nodeUtf8 = WideToUtf8(pName);
     int hintFlags = pHints ? pHints->ai_flags : 0;
+    uint32_t hintFlagsU = static_cast<uint32_t>(hintFlags);
     int hintFamily = pHints ? pHints->ai_family : AF_UNSPEC;
 
     if ((dwNameSpace == NS_DNS || dwNameSpace == NS_ALL) &&
@@ -294,7 +343,7 @@ int WSAAPI HookedGetAddrInfoExW(
         uint32_t fakeIp = SharedBridgeClient::AllocateOrGetFakeIp(nodeUtf8.c_str());
         if (fakeIp != 0) {
             std::string svcUtf8 = WideToUtf8(pServiceName);
-            auto* node = new ADDRINFOEXW{};
+            auto* node = new FakeAddrInfoExNode{};
             sockaddr_storage sa{};
             size_t saLen = 0;
             int outFamily = AF_INET;
@@ -310,21 +359,34 @@ int WSAAPI HookedGetAddrInfoExW(
             node->ai_protocol = pHints ? pHints->ai_protocol : IPPROTO_TCP;
             node->ai_addrlen = saLen;
             node->ai_addr = addrMem;
-            if (hintFlags & AI_CANONNAME) {
-                size_t len = std::wcslen(pName) + 1;
-                node->ai_canonname = new wchar_t[len];
-                std::memcpy(node->ai_canonname, pName, len * sizeof(wchar_t));
+            if ((hintFlagsU & (AI_CANONNAME | AI_FQDN)) != 0 && pName) {
+                node->ai_canonname = DuplicateWideString(pName);
             }
             node->ai_blob = nullptr;
             node->ai_bloblen = 0;
             node->ai_provider = nullptr;
             node->ai_next = nullptr;
 
+            if (pHints && (hintFlagsU & AI_EXTENDED) != 0) {
+                int reqVersion = reinterpret_cast<const ADDRINFOEX2W*>(pHints)->ai_version;
+                if (reqVersion < ADDRINFOEX_VERSION_2) {
+                    reqVersion = ADDRINFOEX_VERSION_2;
+                }
+                node->ai_flags = static_cast<int>(AI_EXTENDED);
+                node->ai_version = reqVersion;
+                if ((hintFlagsU & (AI_FQDN | AI_RETURN_PREFERRED_NAMES)) != 0 && pName) {
+                    node->ai_fqdn = DuplicateWideString(pName);
+                }
+                if (reqVersion >= ADDRINFOEX_VERSION_5) {
+                    node->ai_ttl = 60;
+                }
+            }
+
             {
                 std::lock_guard<std::mutex> lock(g_fakeDnsAllocMutex);
                 g_fakeAddrInfoExW.insert(node);
             }
-            *ppResult = node;
+            *ppResult = reinterpret_cast<PADDRINFOEXW>(node);
             if (lpHandle) {
                 *lpHandle = nullptr;
             }
@@ -353,11 +415,12 @@ void WSAAPI HookedFreeAddrInfoExW(PADDRINFOEXW pAddrInfo) {
         isFake = g_fakeAddrInfoExW.erase(pAddrInfo) > 0;
     }
     if (isFake) {
-        PADDRINFOEXW cur = pAddrInfo;
+        auto* cur = reinterpret_cast<FakeAddrInfoExNode*>(pAddrInfo);
         while (cur) {
-            PADDRINFOEXW next = cur->ai_next;
+            FakeAddrInfoExNode* next = cur->ai_next;
             delete[] reinterpret_cast<uint8_t*>(cur->ai_addr);
             delete[] cur->ai_canonname;
+            delete[] cur->ai_fqdn;
             delete cur;
             cur = next;
         }

@@ -5,7 +5,7 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
 ## 核心特性
 
 - **独立后台桥接进程（`AppProxy.Bridge.exe`）与自动生命周期回收**：
-  - 每个启动的应用会话拥有独立的无窗口后台桥接进程 `AppProxy.Bridge.exe`（通过 `CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP` 脱离 UI 进程树运行）。
+  - 每个启动的应用会话拥有独立的无窗口后台桥接进程 `AppProxy.Bridge.exe`（通过 `CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP` 脱离 UI 进程树运行）；`AppProxy.Core` 与 `AppProxy.Bridge` 均已彻底脱离 WPF 依赖（仅依赖轻量级 `Microsoft.NETCore.App`）。
   - **退出/关闭 `AppProxy.UI.exe` 不会中断已启动应用的代理连接与 Fake-IP DNS 解析**；重新打开 UI 界面可自动重新发现运行中的后台桥接并恢复实时监控快照。
   - 通过 **Windows Job Object + IOCP (`JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO`) + 退出看门狗** 绑定目标应用及其全部派生子进程树（Hook 层自动剥离 `CREATE_BREAKAWAY_FROM_JOB`）。当主目标进程退出后，自动识别并清理残余的 `ELECTRON_RUN_AS_NODE`、Chromium `--type=renderer/gpu/utility` 子进程及 `crashpad_handler` 等孤儿进程（同时保留具备可见 GUI 窗口的自重启子进程），随后释放回环端口与共享内存并优雅退出。
 - **双架构支持 (`x86` / `x64`) + ACG/CFG 安全注入与子进程继承**：
@@ -22,6 +22,7 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
   - 针对 Fake-IP 与远程 DNS 模式下的 UDP/QUIC 发包及 UDP:53 返回快速失败（`WSAECONNREFUSED`），促使浏览器迅速回退至 TCP HTTPS。
 - **远程 DNS 解析 / Fake-IP (`198.18.0.0/15` 与 `fd98:0018::/96`)**：
   - Hook `getaddrinfo`、`GetAddrInfoW`、`GetAddrInfoExW`、`gethostbyname` 与对应的 `freeaddrinfo*`。
+  - `GetAddrInfoExW` / `FreeAddrInfoExW` 完整兼容 `AI_EXTENDED` 扩展结构体（`ADDRINFOEX2W` ~ `ADDRINFOEX7`，通过全零超集结构 `FakeAddrInfoExNode` 与双架构 `static_assert` 偏移校验，正确填充 `ai_version` / `ai_fqdn` / `ai_canonname` / `ai_ttl`），彻底兼容依赖 WinHTTP / `webio.dll` 的应用（如 Steam WebSocket CM）。
   - 域名在本地分配虚拟 IP 并写入跨进程共享内存，实际隧道建立时由独立桥接器还原原始域名发送给代理服务器（零本地 DNS 泄漏）。
   - 进程内 Fake-IP 缓存命中时执行 O(1) 跨进程共享内存一致性校验；环形缓冲（16,384 槽位）回绕时基于 `lastUsedTick` 采用窗口近似 LRU 驱逐，避免热点域名被立刻覆盖或命中陈旧缓存。
 - **安全通信与稳定性加固**：
@@ -30,7 +31,7 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
   - UI 监控面板采用有序 FIFO 队列在 UI 线程统一批量刷盘连接更新与桥接断开事件，避免高并发下的跨线程竞争。
 - **C# .NET 8 WPF Fluent UI**：
   - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`，自动解析 Squirrel/Electron `Update.exe` 目标）自动提取图标、启动参数、工作目录与 PE 架构识别；支持**最大运行实例数上限**配置、**Chromium 系浏览器隔离 Profile**（自动追加 `--user-data-dir`）与**一键生成桌面快捷方式**（免打开 UI 双击直启代理）。
-  - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）及实时握手延迟测速。
+  - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）、实时握手延迟测速，以及直接在节点卡片右侧**一键克隆已有节点**（自动生成新 `Guid`、智能 `(副本)` 去重命名、预填参数编辑并插入源节点下方）。
   - 实时监控：通过命名管道聚合所有活跃后台桥接的连接目标、Fake-IP、代理状态、握手延迟、实时上传/下载字节统计及进程注入/DNS 事件日志。
   - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、启动互斥锁（`data\locks\`）与崩溃日志（`data\logs\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移。
 
@@ -145,6 +146,27 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
 - `SHA256SUMS.txt`：发布产物 SHA-256 校验清单。
 
 首次编译 `AppProxy.Hook.vcxproj` 时，MSBuild 会自动从 GitHub 下载并解压 `MinHook v1.3.3` 源码到 `third_party\minhook\`（若无法访问 GitHub，可手动下载 `TsudaKageyu/minhook` v1.3.3 解压至 `third_party\minhook\minhook-1.3.3\`）。
+
+## 开发接手与维护约定（Architecture & Invariants）
+
+便于新会话或协作者快速接手，修改代码时请务必遵守以下架构边界与核心不变量：
+
+1. **分层与命名空间约束**：
+   - `AppProxy.Core`（`AppProxy.Core.{Models,Services,Interop}`）与 `AppProxy.Bridge` **禁止引入 `<UseWPF>true</UseWPF>`**（由 `PeInspectorTests.CoreAndBridge_AreDecoupledFromWpfAssemblies` 自动化守卫）；`AppProfile.Icon` 使用 `object?` 承接 UI 层冻结的 `BitmapSource`。
+   - PE 架构检测统一复用 `AppProxy.Core.Services.PeArchitectureDetector`，不要在 Bridge/UI 中重复实现 PE/CLR 解析。
+2. **系统代理隔离不可破坏（`IgnoreSystemProxy`）**：
+   - 由四层协同完成：环境变量清除（`BridgeDaemonHost` / `HooksSystemProxy.cpp` / `HooksProcess.cpp`）、`kernelbase` 注册表 Hook（`Internet Settings` & `DefaultConnectionSettings`）、WinINet Hook 与 WinHTTP Hook（`HooksWinHttp.cpp`）。任何涉及启动流程、环境变量或 Hook 的改动后必须确保 `SystemProxyIsolationTests` 全部通过。
+3. **跨进程二进制布局与扩展 DNS 结构体**：
+   - `src/native/AppProxy.Common/SharedLayout.h` 与 `src/AppProxy.Core/Services/SharedMemoryService.cs` 共享内存二进制偏移必须严格一一对应；修改原生代码后必须同时重编 `Win32` 与 `x64`（`scripts\build.bat`）。
+   - `HooksDns.cpp` 的 `HookedGetAddrInfoExW` 必须通过 `FakeAddrInfoExNode` 覆盖 `ADDRINFOEXW` ~ `ADDRINFOEX7`（切勿退回仅分配基础 `ADDRINFOEXW`，否则会导致 `webio.dll` 越界读 `ai_fqdn` 触发 `0xC0000409` 崩溃，例如 Steam 登录闪退）。
+4. **管道权限与 UI 线程安全**：
+   - `AppProxy_Ui_<pid>` 遥测管道保持当前登录用户 ACL（`NamedPipeServerStreamAcl`）；**切勿**对 `AppProxy_Log_<pid>` 施加拒绝低完整性/AppContainer 令牌的窄 ACL，以免阻断 Chromium/Edge/Electron 沙盒渲染/网络子进程日志上报。
+   - `MainViewModel` 中 `_connectionIndex` 与 WPF 绑定属性仅允许在 UI 线程访问，后台管道回调统一经 `_pendingConnectionOps` FIFO 队列入队并在 `OnFlushTimerTick` 刷盘。
+5. **桥接启动兼容与打包数据注意**：
+   - `AppProxy.UI` 默认使用 `--launch-stdin` 匿名管道隐藏代理凭据，同时必须保留 `--launch-app-id <Guid>`（桌面快捷方式）与 `--launch-b64`（测试/脚本兼容）。
+   - 运行 `scripts\package.ps1` 会先清空 `artifacts\package\AppProxy\`；若日常曾直接在该目录运行并生成了 `data\config.json`，打包前请先备份其中的 `data\` 目录。
+6. **回归测试基线**：
+   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **51 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、Fake-IP 缓存一致性、UI 并发队列及真实 `WinHTTP / webio.dll` 端到端转发）。
 
 ## 已知限制
 
