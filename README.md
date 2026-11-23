@@ -12,10 +12,11 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
   - 使用 `IsWow64Process2` 自动识别实际运行位数（兼容 `.NET AnyCPU` 与跨架构子进程）。
   - 通过 **Early-Bird User APC (`QueueUserAPC(LoadLibraryW)`)** 在主线程恢复进入 OEP 前完成注入（仅分配 `PAGE_READWRITE` 内存，不修改 `.text` 为 RWX，兼容 ACG / CFG），并在创建目标及子进程时显式剥离 CIG / ACG 等缓解策略，支持注入 Edge 等微软签名与沙盒系应用。
   - Hook `CreateProcessW` / `CreateProcessA` / `CreateProcessAsUserW` / `ResumeThread` 与 `LoadLibrary*`（支持延迟加载模块补装 Hook），实现父子进程同构或跨架构自动注入继承。
-- **系统代理隔离（`IgnoreSystemProxy`，默认开启）**：
-  - 确保通过 AppProxy 启动的应用**不受本机全局系统代理（如 Clash / v2rayN）或代理环境变量干扰**，流量严格走 AppProxy 指定代理节点。
+- **系统代理隔离（`IgnoreSystemProxy`，默认开启）与全局 TUN 网卡绕过（`BypassGlobalTun`，默认开启）**：
+  - 确保通过 AppProxy 启动的应用**不受本机全局系统代理（如 Clash / v2rayN）或全局 TUN 虚拟网卡干扰**，流量严格走 AppProxy 指定代理节点。
   - 启动与注入阶段同步清除 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `FTP_PROXY` / `SOCKS_PROXY`（含小写变体）并在派生子进程环境块中持续剥离。
   - 原生层 Hook `kernelbase` 注册表查询（`RegQueryValueEx*` / `RegGetValue*`，拦截 `Internet Settings` 及 `DefaultConnectionSettings` 二进制配置）、**WinINet**（`InternetOpen*` / `InternetQueryOption*`）与 **WinHTTP**（`WinHttpOpen`、`WinHttpGetIEProxyConfigForCurrentUser`、`WinHttpGetProxyForUrl`、`WinHttpReadProxySettings` 等 9 个 API），向目标进程统一返回直连配置，使连接交由 Winsock Hook 透明接管。
+  - 后台桥接与节点测速在网络出口层自动过滤 `Wintun` / `sing-tun` / `Clash` / `TAP-Windows` 等虚拟网卡，通过 **`IP_UNICAST_IF` / `IPV6_UNICAST_IF`** 绑定物理出口网卡，并对域名代理节点采用物理网卡 **DoH over IP:443** 解析（绕开 `strict_route` 的 53 端口 WFP 拦截与 Fake-IP 污染）；同时监听操作系统网卡变化事件，在网线拔插、DHCP IP 变更或有线/Wi-Fi 切换时自动故障转移。
 - **Winsock & 异步 Socket 拦截**：
   - Hook `connect`、`WSAConnect`、`WSAConnectByNameW/A`、`WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER -> ConnectEx)`、`getpeername`、`closesocket`。
   - 兼容阻塞、非阻塞（`FIONBIO`）、`WSAEventSelect` 及 `ConnectEx` + IOCP 模型（支持 Chromium/Electron、Go、Node.js、Python、.NET、cURL、Git 等）。
@@ -67,7 +68,7 @@ AppProxy.sln
    - 支持直接将 `.exe` 或桌面/开始菜单 `.lnk` 快捷方式拖放到应用列表（自动解析目标路径、参数、工作目录、图标与 x86/x64 架构；自动识别 Squirrel/Electron 的 `Update.exe --processStart`）。
    - 为应用绑定目标代理节点（或选择 `Direct` 直连）。
 3. **关键应用选项说明**：
-   - **忽略系统代理（`IgnoreSystemProxy`，推荐保持开启）**：即使 Windows 当前开启了全局系统代理或配置了 `HTTP_PROXY` 环境变量，经 AppProxy 启动的应用也会忽略它们，只走所选 AppProxy 代理节点。
+   - **忽略系统代理（`IgnoreSystemProxy`，推荐保持开启）**：即使 Windows 当前开启了全局系统代理（如 Clash / v2rayN）、配置了 `HTTP_PROXY` 环境变量或开启了全局 TUN 虚拟网卡，经 AppProxy 启动的应用也会忽略它们（配合「系统设置 → 全局 TUN 网卡隔离（`BypassGlobalTun`，默认开启）」自动或手动绑定物理出口网卡，并在网线拔插、切换 Wi-Fi 或 DHCP 换 IP 时自动故障转移；即使应用绑定 `Direct` 直连，在检测到活跃 TUN 时也会经物理网卡直连分流），只走 AppProxy 指定链路。
    - **远程 DNS（`RemoteDns`，推荐保持开启）**：启用 Fake-IP，防止本地 DNS 泄漏。
    - **绕过局域网（`BypassLan`）**：私网与回环地址直连，避免内网访问失败（Fake-IP 网段永远不会被绕过）。
    - **注入子进程（`InjectChildren`）**：自动向应用派生的所有子进程（含跨位数子进程）继承代理拦截。
@@ -99,7 +100,7 @@ AppProxy.sln
 ### 4. 常见问题排查
 
 - **应用启动后秒退或流量未被捕获**：多为单实例应用（如未隔离的浏览器、Electron/聊天客户端）后台托盘已有未注入实例并接管了新窗口。请先完全退出目标应用的所有后台进程，或为 Chromium 系浏览器开启「隔离 Profile 目录」。
-- **本机同时开启了其他全局代理工具（如 Clash/v2rayN）**：确认对应应用的「忽略系统代理（`IgnoreSystemProxy`）」已勾选；可在监控面板事件日志中确认 Hook 加载消息包含 `system-proxy-isolated`。
+- **本机同时开启了其他全局代理或 TUN 工具（如 Clash/v2rayN）**：确认对应应用的「忽略系统代理（`IgnoreSystemProxy`）」与「系统设置 → 全局 TUN 网卡隔离（`BypassGlobalTun`）」均已勾选，且设置页已识别到正确的物理出口网卡；可在监控面板事件日志中确认包含 `system-proxy-isolated` 与 `[Outbound: <物理网卡> (TUN Bypassed)]`。
 - **排查 Bridge 进程命令行是否泄露凭据**：在 PowerShell 中运行：
   ```powershell
   Get-CimInstance Win32_Process -Filter "Name='AppProxy.Bridge.exe'" | Select-Object ProcessId, CommandLine
@@ -155,8 +156,9 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
 1. **分层与命名空间约束**：
    - `AppProxy.Core`（`AppProxy.Core.{Models,Services,Interop}`）与 `AppProxy.Bridge` **禁止引入 `<UseWPF>true</UseWPF>`**（由 `PeInspectorTests.CoreAndBridge_AreDecoupledFromWpfAssemblies` 自动化守卫）；`AppProfile.Icon` 使用 `object?` 承接 UI 层冻结的 `BitmapSource`。
    - PE 架构检测统一复用 `AppProxy.Core.Services.PeArchitectureDetector`，不要在 Bridge/UI 中重复实现 PE/CLR 解析。
-2. **系统代理隔离不可破坏（`IgnoreSystemProxy`）**：
-   - 由四层协同完成：环境变量清除（`BridgeDaemonHost` / `HooksSystemProxy.cpp` / `HooksProcess.cpp`）、`kernelbase` 注册表 Hook（`Internet Settings` & `DefaultConnectionSettings`）、WinINet Hook 与 WinHTTP Hook（`HooksWinHttp.cpp`）。任何涉及启动流程、环境变量或 Hook 的改动后必须确保 `SystemProxyIsolationTests` 全部通过。
+2. **系统代理隔离与全局 TUN 绕过不可破坏（`IgnoreSystemProxy` / `BypassGlobalTun`）**：
+   - 系统代理由四层协同完成：环境变量清除（`BridgeDaemonHost` / `HooksSystemProxy.cpp` / `HooksProcess.cpp`）、`kernelbase` 注册表 Hook（`Internet Settings` & `DefaultConnectionSettings`）、WinINet Hook 与 WinHTTP Hook（`HooksWinHttp.cpp`）。
+   - 全局 TUN 绕过由 `PhysicalNetworkSelector` / `PhysicalDnsResolver` / `OutboundSocketConnector` 协同完成：仅按网卡索引设置 `IP_UNICAST_IF`（大端序）与 `IPV6_UNICAST_IF`（主机序），**切勿** `Bind` 缓存的本地 IP（避免 DHCP 改 IP 失败），也**绝不**对回环地址（`127.0.0.0/8` / `::1` / `localhost`）施加接口绑定；公网域名代理节点优先经物理网卡 **DoH over IP:443** 解析以绕开 `strict_route` 53 端口 WFP 封锁与 Fake-IP 污染，并随 `NetworkEpoch` 自动失效缓存。任何涉及启动流程、网络出口或 Hook 的改动后必须确保 `SystemProxyIsolationTests` 与 `TunBypassTests` 全部通过。
 3. **跨进程二进制布局与扩展 DNS 结构体**：
    - `src/native/AppProxy.Common/SharedLayout.h` 与 `src/AppProxy.Core/Services/SharedMemoryService.cs` 共享内存二进制偏移必须严格一一对应；修改原生代码后必须同时重编 `Win32` 与 `x64`（`scripts\build.bat`）。
    - `HooksDns.cpp` 的 `HookedGetAddrInfoExW` 必须通过 `FakeAddrInfoExNode` 覆盖 `ADDRINFOEXW` ~ `ADDRINFOEX7`（切勿退回仅分配基础 `ADDRINFOEXW`，否则会导致 `webio.dll` 越界读 `ai_fqdn` 触发 `0xC0000409` 崩溃，例如 Steam 登录闪退）。
@@ -167,7 +169,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
    - `AppProxy.UI` 默认使用 `--launch-stdin` 匿名管道隐藏代理凭据，同时必须保留 `--launch-app-id <Guid>`（桌面快捷方式）与 `--launch-b64`（测试/脚本兼容）。
    - 运行 `scripts\package.ps1` 会先清空 `artifacts\package\AppProxy\`；若日常曾直接在该目录运行并生成了 `data\config.json`，打包前请先备份其中的 `data\` 目录。
 6. **回归测试基线**：
-   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **53 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
+   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **59 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、全局 TUN 绕过与多网卡故障转移、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
 
 ## 已知限制
 

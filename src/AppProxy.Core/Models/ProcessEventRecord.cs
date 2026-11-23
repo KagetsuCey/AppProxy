@@ -22,4 +22,6 @@ public sealed class AppConfig
     public bool IsDarkTheme { get; set; } = true;
     public string TestProbeHost { get; set; } = "www.gstatic.com";
     public int TestProbePort { get; set; } = 80;
+    public bool BypassGlobalTun { get; set; } = true;
+    public string? PreferredOutboundInterface { get; set; }
 }

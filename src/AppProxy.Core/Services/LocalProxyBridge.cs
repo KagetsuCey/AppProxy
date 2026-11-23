@@ -16,6 +16,8 @@ public sealed class SessionContext
     public ProxyProfile? Proxy { get; set; }
     public bool BypassLan { get; set; } = true;
     public bool RemoteDns { get; set; } = true;
+    public bool BypassGlobalTun { get; set; } = true;
+    public string? PreferredOutboundInterface { get; set; }
 }
 
 public sealed class LocalProxyBridge : IDisposable
@@ -156,22 +158,29 @@ public sealed class LocalProxyBridge : IDisposable
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             connectCts.CancelAfter(TimeSpan.FromSeconds(15));
 
-            upstreamClient = new TcpClient { NoDelay = true };
+            bool bypassGlobalTun = session?.BypassGlobalTun ?? true;
+            string? preferredOutbound = session?.PreferredOutboundInterface;
+
             if (shouldDirect)
             {
-                if (nat.TargetIp is not null)
-                {
-                    await upstreamClient.ConnectAsync(nat.TargetIp, nat.TargetPort, connectCts.Token);
-                }
-                else
-                {
-                    await upstreamClient.ConnectAsync(nat.TargetHost, nat.TargetPort, connectCts.Token);
-                }
+                upstreamClient = await OutboundSocketConnector.ConnectAsync(
+                    nat.TargetHost,
+                    nat.TargetPort,
+                    nat.TargetIp,
+                    bypassGlobalTun,
+                    preferredOutbound,
+                    connectCts.Token);
                 upstreamStream = upstreamClient.GetStream();
             }
             else
             {
-                await upstreamClient.ConnectAsync(proxy!.Host, proxy.Port, connectCts.Token);
+                upstreamClient = await OutboundSocketConnector.ConnectAsync(
+                    proxy!.Host,
+                    proxy.Port,
+                    null,
+                    bypassGlobalTun,
+                    preferredOutbound,
+                    connectCts.Token);
                 NetworkStream baseStream = upstreamClient.GetStream();
                 if (proxy.Protocol == ProxyProtocol.Socks5)
                 {

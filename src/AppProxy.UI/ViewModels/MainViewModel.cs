@@ -16,6 +16,8 @@ using Wpf.Ui.Appearance;
 
 namespace AppProxy.UI.ViewModels;
 
+public sealed record OutboundInterfaceChoice(string Id, string DisplayName);
+
 public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly record struct ConnectionQueueItem(BridgeConnectionDto? Upsert, uint DisconnectBridgePid)
@@ -39,6 +41,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<AppProfile> Apps { get; } = new();
     public ObservableCollection<ConnectionRecord> Connections { get; } = new();
     public ObservableCollection<ProcessEventRecord> ProcessEvents { get; } = new();
+    public ObservableCollection<OutboundInterfaceChoice> OutboundInterfaceChoices { get; } = new();
 
     public ICollectionView FilteredApps { get; }
     public ICollectionView FilteredConnections { get; }
@@ -89,6 +92,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int _testProbePort = 80;
 
+    [ObservableProperty]
+    private bool _bypassGlobalTun = true;
+
+    [ObservableProperty]
+    private string _preferredOutboundInterface = string.Empty;
+
+    [ObservableProperty]
+    private string _outboundNetworkSummary = string.Empty;
+
     public MainViewModel()
     {
         _configService = new ConfigService();
@@ -103,6 +115,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsDarkTheme = _config.IsDarkTheme;
         TestProbeHost = string.IsNullOrWhiteSpace(_config.TestProbeHost) ? "www.gstatic.com" : _config.TestProbeHost;
         TestProbePort = _config.TestProbePort is > 0 and <= 65535 ? _config.TestProbePort : 80;
+        BypassGlobalTun = _config.BypassGlobalTun;
+        PreferredOutboundInterface = _config.PreferredOutboundInterface ?? string.Empty;
+        RefreshOutboundInterfacesCore();
+        PhysicalNetworkSelector.NetworkChanged += OnPhysicalNetworkChanged;
 
         foreach (var proxy in _config.Proxies)
         {
@@ -134,6 +150,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnAppSearchTextChanged(string value) => FilteredApps.Refresh();
     partial void OnConnectionSearchTextChanged(string value) => FilteredConnections.Refresh();
+
+    partial void OnBypassGlobalTunChanged(bool value)
+    {
+        UpdateOutboundNetworkSummary();
+        if (!_isInitializing)
+        {
+            SaveConfiguration();
+        }
+    }
+
+    partial void OnPreferredOutboundInterfaceChanged(string value)
+    {
+        UpdateOutboundNetworkSummary();
+        if (!_isInitializing)
+        {
+            SaveConfiguration();
+        }
+    }
 
     partial void OnIsDarkThemeChanged(bool value)
     {
@@ -388,7 +422,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             : null;
 
         StatusMessage = $"Launching standalone bridge and injecting {app.Name}...";
-        var (ok, _, msg) = await _launcher.LaunchAppAsync(app, proxy);
+        string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
+        var (ok, _, msg) = await _launcher.LaunchAppAsync(app, proxy, BypassGlobalTun, preferredNic);
         RefreshBridgeSummary();
         StatusMessage = msg;
         if (!ok)
@@ -464,14 +501,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private async Task TestProxyAsync(ProxyProfile? proxy)
     {
         if (proxy is null || proxy.IsTesting) return;
-        await ProxyTester.TestProxyAsync(proxy, TestProbeHost, TestProbePort);
+        string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
+        await ProxyTester.TestProxyAsync(proxy, TestProbeHost, TestProbePort, default, BypassGlobalTun, preferredNic);
         StatusMessage = $"Tested {proxy.Name}: {proxy.LatencyDisplay}";
     }
 
     [RelayCommand]
     private async Task TestAllProxiesAsync()
     {
-        var tasks = Proxies.Select(p => ProxyTester.TestProxyAsync(p, TestProbeHost, TestProbePort));
+        string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
+        var tasks = Proxies.Select(p => ProxyTester.TestProxyAsync(p, TestProbeHost, TestProbePort, default, BypassGlobalTun, preferredNic));
         await Task.WhenAll(tasks);
         StatusMessage = "Finished testing all proxies.";
     }
@@ -531,6 +574,86 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private void RefreshOutboundInterfaces()
+    {
+        PhysicalNetworkSelector.InvalidateCache();
+        RefreshOutboundInterfacesCore();
+        StatusMessage = "已刷新可用出口网卡列表";
+    }
+
+    private void OnPhysicalNetworkChanged()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+        _ = dispatcher.BeginInvoke(() => RefreshOutboundInterfacesCore());
+    }
+
+    private void RefreshOutboundInterfacesCore()
+    {
+        string currentPreferred = PreferredOutboundInterface ?? string.Empty;
+        bool wasInit = _isInitializing;
+        _isInitializing = true;
+        try
+        {
+            OutboundInterfaceChoices.Clear();
+            OutboundInterfaceChoices.Add(new OutboundInterfaceChoice(string.Empty, "自动探测物理网卡 (推荐)"));
+
+            IReadOnlyList<OutboundInterfaceInfo> all = PhysicalNetworkSelector.GetSelectableInterfaces();
+            foreach (OutboundInterfaceInfo nic in all)
+            {
+                string tag = nic.IsVirtualOrTun ? " [虚拟/TUN]" : string.Empty;
+                OutboundInterfaceChoices.Add(new OutboundInterfaceChoice(nic.Id, $"{nic.DisplaySummary}{tag}"));
+            }
+
+            if (!string.IsNullOrEmpty(currentPreferred) &&
+                !OutboundInterfaceChoices.Any(c => string.Equals(c.Id, currentPreferred, StringComparison.OrdinalIgnoreCase)))
+            {
+                OutboundInterfaceChoices.Add(new OutboundInterfaceChoice(currentPreferred, $"已保存网卡 (当前离线，自动故障转移)"));
+            }
+
+            PreferredOutboundInterface = currentPreferred;
+        }
+        finally
+        {
+            _isInitializing = wasInit;
+        }
+
+        UpdateOutboundNetworkSummary();
+    }
+
+    private void UpdateOutboundNetworkSummary()
+    {
+        IReadOnlyList<string> activeTuns = PhysicalNetworkSelector.GetActiveTunAdapterNames();
+        string tunNote = activeTuns.Count > 0
+            ? $" · 检测到活跃 TUN: {string.Join(", ", activeTuns)}"
+            : " · 当前未检测到活跃 TUN";
+
+        if (!BypassGlobalTun)
+        {
+            OutboundNetworkSummary = $"已关闭 TUN 绕过，出站流量遵循系统默认路由{tunNote}";
+            return;
+        }
+
+        string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
+        OutboundInterfaceInfo? selected = PhysicalNetworkSelector.ResolveBestOutboundInterface(preferredNic);
+        if (selected is null)
+        {
+            OutboundNetworkSummary = $"暂未检测到可用物理出口网卡，将使用系统默认路由{tunNote}";
+        }
+        else if (!string.IsNullOrEmpty(preferredNic) &&
+                 !string.Equals(selected.Id, preferredNic, StringComparison.OrdinalIgnoreCase))
+        {
+            OutboundNetworkSummary = $"指定网卡当前离线，已自动故障转移至: {selected.DisplaySummary}{tunNote}";
+        }
+        else
+        {
+            OutboundNetworkSummary = $"当前物理出口: {selected.DisplaySummary}{tunNote}";
+        }
+    }
+
+    [RelayCommand]
     public void SaveConfiguration()
     {
         _config.Proxies = Proxies.ToList();
@@ -538,6 +661,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _config.IsDarkTheme = IsDarkTheme;
         _config.TestProbeHost = TestProbeHost;
         _config.TestProbePort = TestProbePort;
+        _config.BypassGlobalTun = BypassGlobalTun;
+        _config.PreferredOutboundInterface = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
         _configService.Save(_config);
     }
 
@@ -566,6 +693,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        PhysicalNetworkSelector.NetworkChanged -= OnPhysicalNetworkChanged;
         _uiFlushTimer.Stop();
         _launcher.Dispose();
     }

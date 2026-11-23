@@ -165,6 +165,8 @@ internal sealed class BridgeDaemonHost : IDisposable
     private int _nextSubscriberId;
     private uint _targetPid;
     private string _appDisplayName = string.Empty;
+    private string _lastOutboundLabel = string.Empty;
+    private bool _effectiveBypassTun;
     private bool _disposed;
 
     public BridgeDaemonHost(BridgeLaunchRequest request)
@@ -178,6 +180,7 @@ internal sealed class BridgeDaemonHost : IDisposable
 
         _bridge.ConnectionCreated += OnBridgeConnectionCreated;
         _bridge.ConnectionUpdated += OnBridgeConnectionUpdated;
+        PhysicalNetworkSelector.NetworkChanged += OnPhysicalNetworkChanged;
     }
 
     public async Task<int> RunAsync(Action<BridgeHandshakeResponse> sendHandshake)
@@ -235,9 +238,12 @@ internal sealed class BridgeDaemonHost : IDisposable
 
         const uint sessionId = 1;
         ProxyProfile? proxyProfile = _request.Proxy?.ToProfile();
+        _effectiveBypassTun = _request.BypassGlobalTun && _request.IgnoreSystemProxy;
+        bool activeTunDetected = PhysicalNetworkSelector.HasActiveTunAdapter();
+        bool bypassDirectThroughBridge = proxyProfile is null && _effectiveBypassTun && activeTunDetected;
 
         NativeSessionFlags flags = NativeSessionFlags.None;
-        if (proxyProfile is null) flags |= NativeSessionFlags.DirectMode;
+        if (proxyProfile is null && !bypassDirectThroughBridge) flags |= NativeSessionFlags.DirectMode;
         if (_request.RemoteDns) flags |= NativeSessionFlags.RemoteDns;
         if (_request.BypassLan) flags |= NativeSessionFlags.BypassLan;
         if (_request.InjectChildren) flags |= NativeSessionFlags.InjectChildren;
@@ -250,7 +256,9 @@ internal sealed class BridgeDaemonHost : IDisposable
             AppName = Path.GetFileName(_request.ExePath),
             Proxy = proxyProfile,
             BypassLan = _request.BypassLan,
-            RemoteDns = _request.RemoteDns
+            RemoteDns = _request.RemoteDns,
+            BypassGlobalTun = _effectiveBypassTun,
+            PreferredOutboundInterface = _request.PreferredOutboundInterface
         });
 
         StartNativeLogPipeServer();
@@ -375,9 +383,20 @@ internal sealed class BridgeDaemonHost : IDisposable
         });
 
         bool warnSingleInstanceHandoff = !_request.IsolateProfileDir && existingInstances > 0;
+        OutboundInterfaceInfo? outboundIface = _effectiveBypassTun
+            ? PhysicalNetworkSelector.ResolveBestOutboundInterface(_request.PreferredOutboundInterface)
+            : null;
+        _lastOutboundLabel = outboundIface?.DisplaySummary ?? string.Empty;
+
         string launchMsg = proxyProfile is not null
             ? $"Launched via {proxyProfile.Name} ({proxyProfile.ProtocolDisplay} {proxyProfile.EndpointDisplay}) [Bridge #{_bridgePid}]"
             : $"Launched in Direct mode [Bridge #{_bridgePid}]";
+        if (_effectiveBypassTun)
+        {
+            string tunTag = activeTunDetected ? "TUN Bypassed" : "Physical NIC";
+            string nicTag = outboundIface is not null ? outboundIface.DisplaySummary : "System Default";
+            launchMsg += $" [Outbound: {nicTag} ({tunTag})]";
+        }
         if (warnSingleInstanceHandoff)
         {
             launchMsg += $" [Warning: {existingInstances} existing instance(s) detected; single-instance apps may hand off to the un-injected process]";
@@ -911,10 +930,44 @@ internal sealed class BridgeDaemonHost : IDisposable
         }
     }
 
+    private void OnPhysicalNetworkChanged()
+    {
+        if (_disposed || !_effectiveBypassTun) return;
+        try
+        {
+            OutboundInterfaceInfo? current = PhysicalNetworkSelector.ResolveBestOutboundInterface(_request.PreferredOutboundInterface);
+            string newLabel = current?.DisplaySummary ?? "System Default";
+            if (string.Equals(newLabel, _lastOutboundLabel, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            string prev = string.IsNullOrEmpty(_lastOutboundLabel) ? "None" : _lastOutboundLabel;
+            _lastOutboundLabel = newLabel;
+
+            RecordAndBroadcastEvent(new ProcessEventRecord
+            {
+                Timestamp = DateTime.Now,
+                BridgePid = _bridgePid,
+                SessionId = 1,
+                Pid = _targetPid,
+                ParentPid = _bridgePid,
+                Arch = string.Empty,
+                ProcessName = Path.GetFileName(_request.ExePath),
+                EventType = "NetworkChanged",
+                Message = $"Physical outbound interface changed: {prev} -> {newLabel}"
+            });
+        }
+        catch
+        {
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        PhysicalNetworkSelector.NetworkChanged -= OnPhysicalNetworkChanged;
         _cts.Cancel();
         _telemetryCts.Cancel();
 

@@ -79,6 +79,8 @@ internal static class Program
                     IgnoreSystemProxy = app.IgnoreSystemProxy,
                     MaxInstances = app.MaxInstances,
                     IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
+                    BypassGlobalTun = cfg.BypassGlobalTun,
+                    PreferredOutboundInterface = cfg.PreferredOutboundInterface,
                     Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
                 };
             }

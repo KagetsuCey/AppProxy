@@ -11,7 +11,9 @@ public static class ProxyTester
         ProxyProfile proxy,
         string probeHost = "www.gstatic.com",
         int probePort = 80,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool bypassGlobalTun = true,
+        string? preferredOutboundInterface = null)
     {
         proxy.IsTesting = true;
         proxy.LastLatencyMs = null;
@@ -23,8 +25,13 @@ public static class ProxyTester
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(8));
 
             var sw = Stopwatch.StartNew();
-            using var tcp = new TcpClient { NoDelay = true };
-            await tcp.ConnectAsync(proxy.Host, proxy.Port, timeoutCts.Token);
+            using TcpClient tcp = await OutboundSocketConnector.ConnectAsync(
+                proxy.Host,
+                proxy.Port,
+                null,
+                bypassGlobalTun,
+                preferredOutboundInterface,
+                timeoutCts.Token);
 
             Stream stream = tcp.GetStream();
             if (proxy.Protocol == ProxyProtocol.Socks5)

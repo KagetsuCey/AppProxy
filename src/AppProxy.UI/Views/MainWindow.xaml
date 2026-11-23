@@ -1401,6 +1401,62 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- Global TUN Bypass Card -->
+                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0"
+                                                Width="38"
+                                                Height="38"
+                                                CornerRadius="8"
+                                                Margin="0,0,14,0"
+                                                Background="{DynamicResource SemanticSuccessBgBrush}">
+                                            <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="19" Foreground="{DynamicResource SemanticSuccessBrush}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                            <TextBlock Text="全局 TUN 网卡隔离 (防双重代理)" FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Text="连接上游代理与节点测速时自动绕过 v2rayN / Clash 等全局 TUN 虚拟网卡，并在网线拔插或切换 Wi-Fi 时自动故障转移"
+                                                       FontSize="12"
+                                                       Margin="0,2,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <ui:ToggleSwitch Grid.Column="2"
+                                                         IsChecked="{Binding BypassGlobalTun, Mode=TwoWay}"
+                                                         VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <Grid Margin="52,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="10" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox Grid.Column="0"
+                                                  ItemsSource="{Binding OutboundInterfaceChoices}"
+                                                  DisplayMemberPath="DisplayName"
+                                                  SelectedValuePath="Id"
+                                                  SelectedValue="{Binding PreferredOutboundInterface, Mode=TwoWay}"
+                                                  IsEnabled="{Binding BypassGlobalTun}" />
+                                        <ui:Button Grid.Column="2"
+                                                   Content="刷新网卡"
+                                                   Appearance="Secondary"
+                                                   Command="{Binding RefreshOutboundInterfacesCommand}" />
+                                    </Grid>
+
+                                    <TextBlock Margin="52,8,0,0"
+                                               Text="{Binding OutboundNetworkSummary}"
+                                               FontSize="11.5"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </Border>
+
                             <!-- Portable Config Card -->
                             <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
                                 <StackPanel>

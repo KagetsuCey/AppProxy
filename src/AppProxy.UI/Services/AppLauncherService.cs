@@ -28,7 +28,11 @@ public sealed class AppLauncherService : IDisposable
         StartBridgeDiscoveryLoop();
     }
 
-    public async Task<(bool Ok, uint Pid, string Message)> LaunchAppAsync(AppProfile app, ProxyProfile? proxy)
+    public async Task<(bool Ok, uint Pid, string Message)> LaunchAppAsync(
+        AppProfile app,
+        ProxyProfile? proxy,
+        bool bypassGlobalTun = true,
+        string? preferredOutboundInterface = null)
     {
         if (string.IsNullOrWhiteSpace(app.ExePath) || !File.Exists(app.ExePath))
         {
@@ -66,6 +70,8 @@ public sealed class AppLauncherService : IDisposable
             IgnoreSystemProxy = app.IgnoreSystemProxy,
             MaxInstances = app.MaxInstances,
             IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
+            BypassGlobalTun = bypassGlobalTun,
+            PreferredOutboundInterface = preferredOutboundInterface,
             Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
         };
 

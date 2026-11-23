@@ -44,6 +44,12 @@ public sealed class BridgeLaunchRequest
     [JsonPropertyName("isolateProfileDir")]
     public bool IsolateProfileDir { get; set; }
 
+    [JsonPropertyName("bypassGlobalTun")]
+    public bool BypassGlobalTun { get; set; } = true;
+
+    [JsonPropertyName("preferredOutboundInterface")]
+    public string? PreferredOutboundInterface { get; set; }
+
     [JsonPropertyName("proxy")]
     public BridgeProxyConfig? Proxy { get; set; }
 
