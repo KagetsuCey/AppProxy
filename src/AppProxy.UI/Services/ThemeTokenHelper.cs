@@ -51,6 +51,13 @@ public static class ThemeTokenHelper
             SetBrush(res, "StatusBarBackgroundBrush", "#18000000");
             SetBrush(res, "DropzoneBackgroundBrush", "#143B82F6");
             SetBrush(res, "IconContainerBgBrush", "#14FFFFFF");
+            SetBrush(res, "SurfaceElevatedBrush", "#12FFFFFF");
+            SetBrush(res, "ToolbarStripBgBrush", "#10FFFFFF");
+            SetBrush(res, "MiniMetricBgBrush", "#10FFFFFF");
+            SetBrush(res, "DataGridHeaderBgBrush", "#16FFFFFF");
+            SetBrush(res, "DataGridRowHoverBrush", "#10FFFFFF");
+            SetBrush(res, "DataGridRowSelectedBrush", "#243B82F6");
+            SetBrush(res, "InputSurfaceBgBrush", "#18000000");
             SetBrush(res, "BrandBadgeStartBrush", "#2563EB");
             SetBrush(res, "BrandBadgeEndBrush", "#7C3AED");
         }
@@ -95,6 +102,13 @@ public static class ThemeTokenHelper
             SetBrush(res, "StatusBarBackgroundBrush", "#0A000000");
             SetBrush(res, "DropzoneBackgroundBrush", "#102563EB");
             SetBrush(res, "IconContainerBgBrush", "#0C000000");
+            SetBrush(res, "SurfaceElevatedBrush", "#CCFFFFFF");
+            SetBrush(res, "ToolbarStripBgBrush", "#08000000");
+            SetBrush(res, "MiniMetricBgBrush", "#08000000");
+            SetBrush(res, "DataGridHeaderBgBrush", "#0B000000");
+            SetBrush(res, "DataGridRowHoverBrush", "#09000000");
+            SetBrush(res, "DataGridRowSelectedBrush", "#182563EB");
+            SetBrush(res, "InputSurfaceBgBrush", "#07000000");
             SetBrush(res, "BrandBadgeStartBrush", "#2563EB");
             SetBrush(res, "BrandBadgeEndBrush", "#6366F1");
         }

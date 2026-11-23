@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AppProxyRoot>$(MSBuildThisFileDirectory)</AppProxyRoot>
     <AppProxyArtifactsDir>$(AppProxyRoot)artifacts\</AppProxyArtifactsDir>
-    <AppProxyVersion Condition="'$(AppProxyVersion)' == ''">1.0.0</AppProxyVersion>
+    <AppProxyVersion Condition="'$(AppProxyVersion)' == ''">1.0.1</AppProxyVersion>
     <AppProxyVersionMajor>$([System.Version]::Parse('$(AppProxyVersion)').Major)</AppProxyVersionMajor>
     <AppProxyVersionMinor>$([System.Version]::Parse('$(AppProxyVersion)').Minor)</AppProxyVersionMinor>
     <AppProxyVersionPatch Condition="$([System.Version]::Parse('$(AppProxyVersion)').Build) &gt;= 0">$([System.Version]::Parse('$(AppProxyVersion)').Build)</AppProxyVersionPatch>

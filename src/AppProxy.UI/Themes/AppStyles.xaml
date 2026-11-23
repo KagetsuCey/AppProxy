@@ -41,13 +41,33 @@
     <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#18000000" />
     <SolidColorBrush x:Key="DropzoneBackgroundBrush" Color="#143B82F6" />
     <SolidColorBrush x:Key="IconContainerBgBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#12FFFFFF" />
+    <SolidColorBrush x:Key="ToolbarStripBgBrush" Color="#10FFFFFF" />
+    <SolidColorBrush x:Key="MiniMetricBgBrush" Color="#10FFFFFF" />
+    <SolidColorBrush x:Key="DataGridHeaderBgBrush" Color="#16FFFFFF" />
+    <SolidColorBrush x:Key="DataGridRowHoverBrush" Color="#10FFFFFF" />
+    <SolidColorBrush x:Key="DataGridRowSelectedBrush" Color="#243B82F6" />
+    <SolidColorBrush x:Key="InputSurfaceBgBrush" Color="#18000000" />
     <SolidColorBrush x:Key="BrandBadgeStartBrush" Color="#2563EB" />
     <SolidColorBrush x:Key="BrandBadgeEndBrush" Color="#7C3AED" />
 
+    <!-- Page Typography -->
+    <Style x:Key="PageTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+
+    <Style x:Key="PageSubtitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Margin" Value="0,3,0,0" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Style>
+
     <!-- Interactive Item Card (Apps / Proxies) -->
     <Style x:Key="InteractiveCardStyle" TargetType="Border">
-        <Setter Property="CornerRadius" Value="10" />
-        <Setter Property="Padding" Value="14,13" />
+        <Setter Property="CornerRadius" Value="11" />
+        <Setter Property="Padding" Value="16,14" />
         <Setter Property="Margin" Value="0,0,0,10" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
@@ -62,11 +82,38 @@
 
     <!-- Static Section / KPI Card -->
     <Style x:Key="SectionCardStyle" TargetType="Border">
-        <Setter Property="CornerRadius" Value="10" />
-        <Setter Property="Padding" Value="16" />
+        <Setter Property="CornerRadius" Value="11" />
+        <Setter Property="Padding" Value="18,16" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+    </Style>
+
+    <!-- Page Filter / Action Toolbar Container -->
+    <Style x:Key="ToolbarStripStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="12,9" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SubtleDividerBrush}" />
+        <Setter Property="Background" Value="{DynamicResource ToolbarStripBgBrush}" />
+    </Style>
+
+    <!-- Mini Telemetry Metric Tile -->
+    <Style x:Key="MiniMetricTileStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SubtleDividerBrush}" />
+        <Setter Property="Background" Value="{DynamicResource MiniMetricBgBrush}" />
+    </Style>
+
+    <!-- Toolbar Vertical Divider -->
+    <Style x:Key="ToolbarVerticalDividerStyle" TargetType="Border">
+        <Setter Property="Width" Value="1" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Margin" Value="8,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource SubtleDividerBrush}" />
     </Style>
 
     <!-- Compact Metadata Pill -->
@@ -77,6 +124,10 @@
         <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
         <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="CompactPillBadgeStyle" TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+        <Setter Property="Padding" Value="6,1.5" />
     </Style>
 
     <!-- Navigation Rail ListBoxItem -->
@@ -118,6 +169,50 @@
                             <Setter TargetName="ActiveIndicator" Property="Visibility" Value="Visible" />
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- DataGrid Modern Styling -->
+    <Style x:Key="ModernDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+        <Setter Property="Height" Value="34" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DataGridHeaderBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SubtleDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="ModernDataGridRowStyle" TargetType="DataGridRow">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource DataGridRowHoverBrush}" />
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource DataGridRowSelectedBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="ModernDataGridCellStyle" TargetType="DataGridCell">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridCell">
+                    <Border Background="{TemplateBinding Background}" Padding="4,0">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

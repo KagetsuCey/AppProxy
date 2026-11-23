@@ -3,10 +3,10 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="AppProxy - 应用级代理注入启动器"
-                 Width="1200"
-                 Height="760"
-                 MinWidth="940"
-                 MinHeight="620"
+                 Width="1240"
+                 Height="780"
+                 MinWidth="980"
+                 MinHeight="640"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -32,37 +32,42 @@
         <!-- Main Shell -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="236" />
+                <ColumnDefinition Width="244" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- Left Navigation Rail -->
             <Border Grid.Column="0"
-                    Padding="12,10,12,12"
+                    Padding="14,12,14,14"
                     Background="{DynamicResource NavRailBackgroundBrush}"
                     BorderThickness="0,0,1,0"
                     BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                 <DockPanel>
                     <!-- Brand Header -->
                     <Border DockPanel.Dock="Top"
-                            CornerRadius="10"
-                            Padding="10,10"
-                            Margin="0,0,0,12"
+                            CornerRadius="11"
+                            Padding="12,11"
+                            Margin="0,0,0,14"
                             BorderThickness="1"
                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                         <StackPanel Orientation="Horizontal">
-                            <Image Source="pack://application:,,,/Assets/AppProxy.png"
-                                   Width="36"
-                                   Height="36"
-                                   Margin="0,0,10,0"
-                                   VerticalAlignment="Center"
-                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                            <Border Width="38"
+                                    Height="38"
+                                    CornerRadius="9"
+                                    Margin="0,0,11,0"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource AppAccentBorderBrush}"
+                                    Background="{DynamicResource AppAccentSoftBrush}">
+                                <Image Source="pack://application:,,,/Assets/AppProxy.png"
+                                       Width="28"
+                                       Height="28"
+                                       RenderOptions.BitmapScalingMode="HighQuality" />
+                            </Border>
                             <StackPanel VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="AppProxy" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
-                                    <Border Style="{StaticResource PillBadgeStyle}"
-                                            Padding="5,1"
+                                    <TextBlock Text="AppProxy" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource CompactPillBadgeStyle}"
                                             Margin="6,0,0,0">
                                         <TextBlock Text="{Binding AppVersionDisplay}"
                                                    FontSize="10"
@@ -72,10 +77,19 @@
                                 </StackPanel>
                                 <TextBlock Text="进程级透明代理引擎"
                                            FontSize="11"
+                                           Margin="0,2,0,0"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <!-- Section Caption -->
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="工作区"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Margin="8,0,0,4"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
 
                     <!-- Navigation Items -->
                     <ListBox DockPanel.Dock="Top"
@@ -177,8 +191,8 @@
                     <!-- Bottom Engine Telemetry Card -->
                     <Border DockPanel.Dock="Bottom"
                             VerticalAlignment="Bottom"
-                            CornerRadius="10"
-                            Padding="12"
+                            CornerRadius="11"
+                            Padding="13"
                             BorderThickness="1"
                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
@@ -197,7 +211,7 @@
                                             </Style>
                                         </Ellipse.Style>
                                     </Ellipse>
-                                    <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                    <TextBlock FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Text" Value="引擎待命" />
@@ -215,34 +229,36 @@
                                 <ui:Button Content="监控"
                                            Appearance="Transparent"
                                            FontSize="11"
-                                           Padding="6,2"
+                                           Padding="7,2.5"
                                            HorizontalAlignment="Right"
                                            Click="OnOpenMonitorClick" />
                             </Grid>
 
                             <TextBlock Text="{Binding BridgeStatusText}"
                                        FontSize="11.5"
-                                       FontWeight="SemiBold"
-                                       Margin="0,6,0,0"
-                                       TextWrapping="Wrap" />
-
-                            <Border Height="1"
-                                    Margin="0,8,0,8"
-                                    Background="{DynamicResource SubtleDividerBrush}" />
+                                       FontWeight="Medium"
+                                       Margin="0,6,0,10"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
 
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="活跃实例" FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding ActiveBridgesCount}" FontSize="14" FontWeight="Bold" Margin="0,1,0,0" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="活跃连接" FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding ActiveConnectionsCount}" FontSize="14" FontWeight="Bold" Margin="0,1,0,0" />
-                                </StackPanel>
+                                <Border Grid.Column="0" Style="{StaticResource MiniMetricTileStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="活跃实例" FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="{Binding ActiveBridgesCount}" FontSize="15" FontWeight="Bold" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="2" Style="{StaticResource MiniMetricTileStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="活跃连接" FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="{Binding ActiveConnectionsCount}" FontSize="15" FontWeight="Bold" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -250,7 +266,7 @@
             </Border>
 
             <!-- Page Host -->
-            <Grid Grid.Column="1" Margin="20,14,20,14">
+            <Grid Grid.Column="1" Margin="24,16,24,16">
 
                 <!-- PAGE 0: Applications -->
                 <Grid x:Name="AppsPageRoot"
@@ -272,30 +288,22 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <!-- Header Bar -->
-                    <Grid Grid.Row="0" Margin="0,0,0,14">
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="250" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="应用管理" FontSize="22" FontWeight="Bold" />
-                            <TextBlock Text="配置目标应用与代理策略，点击启动将自动通过 OEP 注入接管 TCP 与 Fake-IP DNS"
-                                       FontSize="12"
-                                       Margin="0,2,0,0"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                            <TextBlock Text="应用管理" Style="{StaticResource PageTitleTextStyle}" />
+                            <TextBlock Text="配置目标应用与代理策略，启动后自动通过 OEP 注入接管 TCP 与 Fake-IP DNS"
+                                       Style="{StaticResource PageSubtitleTextStyle}" />
                         </StackPanel>
-                        <ui:TextBox Grid.Column="1"
-                                    Text="{Binding AppSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                    PlaceholderText="搜索应用名称或路径..."
-                                    Icon="{ui:SymbolIcon Search24}"
-                                    Margin="12,0"
-                                    VerticalAlignment="Center" />
-                        <ui:Button Grid.Column="2"
+                        <ui:Button Grid.Column="1"
                                    Content="添加应用"
                                    Icon="{ui:SymbolIcon Add24}"
                                    Appearance="Primary"
@@ -303,8 +311,29 @@
                                    VerticalAlignment="Center" />
                     </Grid>
 
+                    <!-- Unified Filter Toolbar -->
+                    <Border Grid.Row="1" Style="{StaticResource ToolbarStripStyle}" Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="270" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding AppSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="搜索应用名称或路径..."
+                                        Icon="{ui:SymbolIcon Search24}"
+                                        VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2"
+                                       Text="支持直接拖入 .exe 可执行文件或 .lnk 快捷方式"
+                                       FontSize="11.5"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </Grid>
+                    </Border>
+
                     <!-- Empty State Dropzone Card -->
-                    <Grid Grid.Row="1" Margin="0,12,0,12">
+                    <Grid Grid.Row="2" Margin="0,8,0,12">
                         <Grid.Style>
                             <Style TargetType="Grid">
                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -355,7 +384,7 @@
                     </Grid>
 
                     <!-- App Cards List -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0">
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0">
                         <ItemsControl ItemsSource="{Binding FilteredApps}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -373,6 +402,7 @@
                                                     Height="48"
                                                     CornerRadius="10"
                                                     Margin="0,0,14,0"
+                                                    VerticalAlignment="Center"
                                                     BorderThickness="1"
                                                     BorderBrush="{DynamicResource SubtleDividerBrush}"
                                                     Background="{DynamicResource IconContainerBgBrush}">
@@ -400,16 +430,19 @@
 
                                             <!-- App Metadata & Capability Pills -->
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <!-- Row 1: Title + Arch + Bound Proxy -->
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Text="{Binding Name}"
-                                                               FontSize="15"
+                                                               FontSize="14.5"
                                                                FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxWidth="260"
                                                                VerticalAlignment="Center" />
 
                                                     <!-- Architecture Pill -->
                                                     <Border Margin="8,0,0,0">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
                                                                 <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
                                                                 <Style.Triggers>
@@ -420,7 +453,7 @@
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
-                                                        <TextBlock Text="{Binding DetectedArch}" FontSize="11" FontWeight="SemiBold">
+                                                        <TextBlock Text="{Binding DetectedArch}" FontSize="10.5" FontWeight="SemiBold">
                                                             <TextBlock.Style>
                                                                 <Style TargetType="TextBlock">
                                                                     <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
@@ -437,7 +470,7 @@
                                                     <!-- Bound Proxy Pill -->
                                                     <Border Margin="6,0,0,0">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
                                                                 <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBorderBrush}" />
                                                                 <Style.Triggers>
@@ -448,7 +481,7 @@
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
-                                                        <TextBlock Text="{Binding BoundProxyName}" FontSize="11" FontWeight="Medium">
+                                                        <TextBlock Text="{Binding BoundProxyName}" FontSize="10.5" FontWeight="Medium">
                                                             <TextBlock.Style>
                                                                 <Style TargetType="TextBlock">
                                                                     <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
@@ -461,13 +494,25 @@
                                                             </TextBlock.Style>
                                                         </TextBlock>
                                                     </Border>
+                                                </StackPanel>
 
+                                                <!-- Row 2: Exe Path -->
+                                                <TextBlock Text="{Binding ExePath}"
+                                                           FontFamily="Consolas"
+                                                           FontSize="11.5"
+                                                           Margin="0,4,0,0"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding ExePath}"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                                                <!-- Row 3: WrapPanel Capability Badges -->
+                                                <WrapPanel Orientation="Horizontal" Margin="0,6,0,0">
                                                     <!-- Fake-IP Pill -->
-                                                    <Border Margin="6,0,0,0"
+                                                    <Border Margin="0,0,6,2"
                                                             Background="{DynamicResource SemanticTealBgBrush}"
                                                             BorderBrush="{DynamicResource SemanticTealBorderBrush}">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding RemoteDns}" Value="True">
@@ -477,17 +522,17 @@
                                                             </Style>
                                                         </Border.Style>
                                                         <TextBlock Text="Fake-IP"
-                                                                   FontSize="11"
+                                                                   FontSize="10.5"
                                                                    FontWeight="Medium"
                                                                    Foreground="{DynamicResource SemanticTealBrush}" />
                                                     </Border>
 
                                                     <!-- Isolated Profile Pill -->
-                                                    <Border Margin="6,0,0,0"
+                                                    <Border Margin="0,0,6,2"
                                                             Background="{DynamicResource SemanticPurpleBgBrush}"
                                                             BorderBrush="{DynamicResource SemanticPurpleBorderBrush}">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding EffectiveIsolateProfileDir}" Value="True">
@@ -497,15 +542,15 @@
                                                             </Style>
                                                         </Border.Style>
                                                         <TextBlock Text="独立配置目录"
-                                                                   FontSize="11"
+                                                                   FontSize="10.5"
                                                                    FontWeight="Medium"
                                                                    Foreground="{DynamicResource SemanticPurpleBrush}" />
                                                     </Border>
 
                                                     <!-- Custom Arguments Indicator Pill -->
-                                                    <Border Margin="6,0,0,0" ToolTip="{Binding Arguments}">
+                                                    <Border Margin="0,0,6,2" ToolTip="{Binding Arguments}">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding HasArguments}" Value="True">
@@ -515,15 +560,15 @@
                                                             </Style>
                                                         </Border.Style>
                                                         <TextBlock Text="启动参数"
-                                                                   FontSize="11"
+                                                                   FontSize="10.5"
                                                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                                     </Border>
 
                                                     <!-- Max Instances Pill -->
-                                                    <Border Margin="6,0,0,0"
+                                                    <Border Margin="0,0,6,2"
                                                             ToolTip="最大允许同时运行的实例数（无论是否通过代理启动均计入）">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
                                                                 <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
                                                                 <Style.Triggers>
@@ -534,7 +579,7 @@
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
-                                                        <TextBlock Text="{Binding MaxInstancesDisplay}" FontSize="11" FontWeight="Medium">
+                                                        <TextBlock Text="{Binding MaxInstancesDisplay}" FontSize="10.5" FontWeight="Medium">
                                                             <TextBlock.Style>
                                                                 <Style TargetType="TextBlock">
                                                                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -547,20 +592,12 @@
                                                             </TextBlock.Style>
                                                         </TextBlock>
                                                     </Border>
-                                                </StackPanel>
-
-                                                <TextBlock Text="{Binding ExePath}"
-                                                           FontFamily="Consolas"
-                                                           FontSize="11.5"
-                                                           Margin="0,5,0,0"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           ToolTip="{Binding ExePath}"
-                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                </WrapPanel>
                                             </StackPanel>
 
                                             <!-- Quick Proxy Switch + Actions -->
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                                                <ComboBox Width="166"
+                                                <ComboBox Width="162"
                                                           Margin="0,0,8,0"
                                                           ItemsSource="{Binding DataContext.Proxies, RelativeSource={RelativeSource AncestorType=Window}}"
                                                           DisplayMemberPath="Name"
@@ -571,20 +608,20 @@
                                                 <ui:Button Content="启动代理"
                                                            Icon="{ui:SymbolIcon Play24}"
                                                            Appearance="Primary"
-                                                           Margin="0,0,6,0"
                                                            Command="{Binding DataContext.LaunchAppCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}" />
+                                                <Border Style="{StaticResource ToolbarVerticalDividerStyle}" />
                                                 <ui:Button Icon="{ui:SymbolIcon Desktop24}"
                                                            Appearance="Secondary"
                                                            Padding="9,7"
-                                                           Margin="0,0,6,0"
+                                                           Margin="0,0,5,0"
                                                            ToolTip="创建桌面快捷方式（双击无需打开 UI 即可代理启动）"
                                                            Command="{Binding DataContext.CreateDesktopShortcutCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}" />
                                                 <ui:Button Icon="{ui:SymbolIcon Edit24}"
                                                            Appearance="Secondary"
                                                            Padding="9,7"
-                                                           Margin="0,0,6,0"
+                                                           Margin="0,0,5,0"
                                                            ToolTip="编辑应用配置"
                                                            Click="OnEditAppClick" />
                                                 <ui:Button Icon="{ui:SymbolIcon Delete24}"
@@ -603,7 +640,7 @@
 
                     <!-- Drag & Drop Visual Overlay -->
                     <Grid x:Name="AppsDropOverlay"
-                          Grid.RowSpan="3"
+                          Grid.RowSpan="4"
                           Visibility="Collapsed"
                           IsHitTestVisible="False">
                         <Border CornerRadius="12" Background="{DynamicResource DropzoneBackgroundBrush}" />
@@ -654,38 +691,27 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="0,0,0,14">
-                        <StackPanel>
-                            <TextBlock Text="代理节点" FontSize="22" FontWeight="Bold" />
-                            <TextBlock Text="管理 SOCKS5 / HTTP / HTTPS 上游代理服务器并测试连通性与握手延迟"
-                                       FontSize="12"
-                                       Margin="0,2,0,0"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <!-- Header Bar -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                            <TextBlock Text="代理节点" Style="{StaticResource PageTitleTextStyle}" />
+                            <TextBlock Text="管理 SOCKS5 / HTTP / HTTPS 上游代理服务器，测试握手延迟并识别落地出口地区与 IP"
+                                       Style="{StaticResource PageSubtitleTextStyle}" />
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <ui:Button Content="全部查出口"
-                                       Icon="{ui:SymbolIcon Globe24}"
-                                       Appearance="Secondary"
-                                       Margin="0,0,8,0"
-                                       Command="{Binding DetectAllProxiesExitIpCommand}" />
-                            <ui:Button Content="全部测速"
-                                       Icon="{ui:SymbolIcon ArrowSync24}"
-                                       Appearance="Secondary"
-                                       Margin="0,0,8,0"
-                                       Command="{Binding TestAllProxiesCommand}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:Button Content="批量导入"
                                        Icon="{ui:SymbolIcon ArrowDownload24}"
                                        Appearance="Secondary"
                                        Margin="0,0,8,0"
                                        Click="OnBatchImportProxiesClick" />
-                            <ui:Button Content="导出 URI"
-                                       Icon="{ui:SymbolIcon ArrowUpload24}"
-                                       Appearance="Secondary"
-                                       Margin="0,0,8,0"
-                                       Command="{Binding ExportProxiesToClipboardCommand}" />
                             <ui:Button Content="添加代理"
                                        Icon="{ui:SymbolIcon Add24}"
                                        Appearance="Primary"
@@ -693,9 +719,41 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- Unified Proxy Filter & Action Toolbar -->
+                    <Border Grid.Row="1" Style="{StaticResource ToolbarStripStyle}" Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="270" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding ProxySearchText, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="搜索节点名称、地址、IP 或地区..."
+                                        Icon="{ui:SymbolIcon Search24}"
+                                        VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button Content="全部测速"
+                                           Icon="{ui:SymbolIcon ArrowSync24}"
+                                           Appearance="Secondary"
+                                           Margin="0,0,6,0"
+                                           Command="{Binding TestAllProxiesCommand}" />
+                                <ui:Button Content="全部查出口"
+                                           Icon="{ui:SymbolIcon Globe24}"
+                                           Appearance="Secondary"
+                                           Command="{Binding DetectAllProxiesExitIpCommand}" />
+                                <Border Style="{StaticResource ToolbarVerticalDividerStyle}" />
+                                <ui:Button Content="导出 URI"
+                                           Icon="{ui:SymbolIcon ArrowUpload24}"
+                                           Appearance="Secondary"
+                                           Command="{Binding ExportProxiesToClipboardCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
                     <!-- Empty Proxy State -->
-                    <Border Grid.Row="1"
-                            Margin="0,12,0,12"
+                    <Border Grid.Row="2"
+                            Margin="0,8,0,12"
                             CornerRadius="12"
                             Padding="28,32"
                             BorderThickness="1"
@@ -746,8 +804,8 @@
                     </Border>
 
                     <!-- Proxy Cards List -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0">
-                        <ItemsControl ItemsSource="{Binding Proxies}">
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0">
+                        <ItemsControl ItemsSource="{Binding FilteredProxies}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Style="{StaticResource InteractiveCardStyle}">
@@ -764,6 +822,7 @@
                                                     Height="44"
                                                     CornerRadius="10"
                                                     Margin="0,0,14,0"
+                                                    VerticalAlignment="Center"
                                                     BorderThickness="1">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
@@ -784,7 +843,7 @@
                                                 <ui:SymbolIcon FontSize="20">
                                                     <ui:SymbolIcon.Style>
                                                         <Style TargetType="ui:SymbolIcon">
-                                                            <Setter Property="Symbol" Value="Server24" />
+                                                            <Setter Property="Symbol" Value="Globe24" />
                                                             <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTP">
@@ -792,7 +851,7 @@
                                                                 </DataTrigger>
                                                                 <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTPS">
                                                                     <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
-                                                                    <Setter Property="Symbol" Value="LockClosed24" />
+                                                                    <Setter Property="Symbol" Value="ShieldCheckmark24" />
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
@@ -804,14 +863,16 @@
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Text="{Binding Name}"
-                                                               FontSize="15"
+                                                               FontSize="14.5"
                                                                FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxWidth="320"
                                                                VerticalAlignment="Center" />
 
                                                     <!-- Protocol Pill -->
                                                     <Border Margin="8,0,0,0">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Background" Value="{DynamicResource SemanticPurpleBgBrush}" />
                                                                 <Setter Property="BorderBrush" Value="{DynamicResource SemanticPurpleBorderBrush}" />
                                                                 <Style.Triggers>
@@ -826,7 +887,7 @@
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
-                                                        <TextBlock Text="{Binding ProtocolDisplay}" FontSize="11" FontWeight="SemiBold">
+                                                        <TextBlock Text="{Binding ProtocolDisplay}" FontSize="10.5" FontWeight="SemiBold">
                                                             <TextBlock.Style>
                                                                 <Style TargetType="TextBlock">
                                                                     <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
@@ -848,7 +909,7 @@
                                                             Background="{DynamicResource SemanticWarningBgBrush}"
                                                             BorderBrush="{DynamicResource SemanticWarningBorderBrush}">
                                                         <Border.Style>
-                                                            <Style TargetType="Border" BasedOn="{StaticResource PillBadgeStyle}">
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding HasAuth}" Value="True">
@@ -858,22 +919,25 @@
                                                             </Style>
                                                         </Border.Style>
                                                         <TextBlock Text="认证"
-                                                                   FontSize="11"
+                                                                   FontSize="10.5"
                                                                    FontWeight="Medium"
                                                                    Foreground="{DynamicResource SemanticWarningBrush}" />
                                                     </Border>
                                                 </StackPanel>
 
-                                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                                                    <TextBlock Text="{Binding EndpointDisplay}"
-                                                               FontFamily="Consolas"
-                                                               FontSize="12"
-                                                               VerticalAlignment="Center"
-                                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <WrapPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                    <Border Style="{StaticResource CompactPillBadgeStyle}"
+                                                            Margin="0,0,8,2"
+                                                            Padding="7,2">
+                                                        <TextBlock Text="{Binding EndpointDisplay}"
+                                                                   FontFamily="Consolas"
+                                                                   FontSize="11.5"
+                                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    </Border>
 
                                                     <!-- Exit IP & Region Pill -->
                                                     <Button Padding="0"
-                                                            Margin="10,0,0,0"
+                                                            Margin="0,0,6,2"
                                                             BorderThickness="0"
                                                             Background="Transparent"
                                                             Cursor="Hand"
@@ -898,7 +962,7 @@
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Button.Style>
-                                                        <Border Padding="7,1.5" CornerRadius="5" BorderThickness="1">
+                                                        <Border Padding="7,2" CornerRadius="5" BorderThickness="1">
                                                             <Border.Style>
                                                                 <Style TargetType="Border">
                                                                     <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
@@ -932,15 +996,16 @@
                                                             </TextBlock>
                                                         </Border>
                                                     </Button>
-                                                </StackPanel>
+                                                </WrapPanel>
                                             </StackPanel>
 
                                             <!-- Color-Graded Latency Pill + Actions -->
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Border Padding="10,4.5"
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                                                <Border MinWidth="82"
+                                                        Padding="10,4.5"
                                                         CornerRadius="12"
                                                         BorderThickness="1"
-                                                        Margin="0,0,10,0">
+                                                        Margin="0,0,8,0">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
                                                             <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
@@ -965,7 +1030,7 @@
                                                             </Style.Triggers>
                                                         </Style>
                                                     </Border.Style>
-                                                    <StackPanel Orientation="Horizontal">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                                         <Ellipse Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center">
                                                             <Ellipse.Style>
                                                                 <Style TargetType="Ellipse">
@@ -1014,26 +1079,26 @@
                                                 <ui:Button Content="测速"
                                                            Icon="{ui:SymbolIcon ArrowSync24}"
                                                            Appearance="Secondary"
-                                                           Margin="0,0,6,0"
                                                            Command="{Binding DataContext.TestProxyCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}" />
+                                                <Border Style="{StaticResource ToolbarVerticalDividerStyle}" />
                                                 <ui:Button Icon="{ui:SymbolIcon Globe24}"
                                                            Appearance="Secondary"
                                                            Padding="9,7"
-                                                           Margin="0,0,6,0"
+                                                           Margin="0,0,5,0"
                                                            ToolTip="检测落地出口 IP 与归属地"
                                                            Command="{Binding DataContext.DetectProxyExitIpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                            CommandParameter="{Binding}" />
                                                 <ui:Button Icon="{ui:SymbolIcon Copy24}"
                                                            Appearance="Secondary"
                                                            Padding="9,7"
-                                                           Margin="0,0,6,0"
+                                                           Margin="0,0,5,0"
                                                            ToolTip="克隆代理节点"
                                                            Click="OnCloneProxyClick" />
                                                 <ui:Button Icon="{ui:SymbolIcon Edit24}"
                                                            Appearance="Secondary"
                                                            Padding="9,7"
-                                                           Margin="0,0,6,0"
+                                                           Margin="0,0,5,0"
                                                            ToolTip="编辑代理节点"
                                                            Click="OnEditProxyClick" />
                                                 <ui:Button Icon="{ui:SymbolIcon Delete24}"
@@ -1067,43 +1132,46 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <!-- Header Bar -->
-                    <Grid Grid.Row="0" Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="240" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="实时监控" FontSize="22" FontWeight="Bold" />
-                            <TextBlock Text="查看注入应用发起的实时网络连接、流量统计与进程注入/Fake-IP 解析事件"
-                                       FontSize="12"
-                                       Margin="0,2,0,0"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                        </StackPanel>
-                        <ui:TextBox Grid.Column="1"
-                                    Text="{Binding ConnectionSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                    PlaceholderText="过滤进程/域名/状态..."
-                                    Icon="{ui:SymbolIcon Search24}"
-                                    Margin="12,0"
-                                    VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:Button Content="清空连接"
-                                       Icon="{ui:SymbolIcon Broom24}"
-                                       Appearance="Secondary"
-                                       Margin="0,0,6,0"
-                                       Command="{Binding ClearConnectionsCommand}" />
-                            <ui:Button Content="清空事件"
-                                       Appearance="Secondary"
-                                       Command="{Binding ClearProcessEventsCommand}" />
-                        </StackPanel>
-                    </Grid>
+                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock Text="实时监控" Style="{StaticResource PageTitleTextStyle}" />
+                        <TextBlock Text="查看注入应用发起的实时网络连接、流量统计与进程注入/Fake-IP 解析事件"
+                                   Style="{StaticResource PageSubtitleTextStyle}" />
+                    </StackPanel>
+
+                    <!-- Filter & Clear Toolbar -->
+                    <Border Grid.Row="1" Style="{StaticResource ToolbarStripStyle}" Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="270" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding ConnectionSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="过滤进程、域名、节点或状态..."
+                                        Icon="{ui:SymbolIcon Search24}"
+                                        VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button Content="清空连接"
+                                           Icon="{ui:SymbolIcon Broom24}"
+                                           Appearance="Secondary"
+                                           Margin="0,0,6,0"
+                                           Command="{Binding ClearConnectionsCommand}" />
+                                <ui:Button Content="清空事件"
+                                           Icon="{ui:SymbolIcon Delete24}"
+                                           Appearance="Secondary"
+                                           Command="{Binding ClearProcessEventsCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
 
                     <!-- 4-Card Telemetry KPI Strip -->
-                    <Grid Grid.Row="1" Margin="0,0,0,12">
+                    <Grid Grid.Row="2" Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="10" />
@@ -1115,17 +1183,19 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- KPI 1: Active Bridges -->
-                        <Border Grid.Column="0" Style="{StaticResource SectionCardStyle}" Padding="14,12">
+                        <Border Grid.Column="0" Style="{StaticResource SectionCardStyle}" Padding="15,13">
                             <Grid>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="活跃桥接实例" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding ActiveBridgesCount}" FontSize="20" FontWeight="Bold" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding ActiveBridgesCount}" FontSize="21" FontWeight="Bold" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <Border Width="34"
-                                        Height="34"
-                                        CornerRadius="8"
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="9"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource SemanticTealBorderBrush}"
                                         Background="{DynamicResource SemanticTealBgBrush}">
                                     <ui:SymbolIcon Symbol="PlugConnected24" FontSize="17" Foreground="{DynamicResource SemanticTealBrush}" />
                                 </Border>
@@ -1133,17 +1203,19 @@
                         </Border>
 
                         <!-- KPI 2: Active Connections -->
-                        <Border Grid.Column="2" Style="{StaticResource SectionCardStyle}" Padding="14,12">
+                        <Border Grid.Column="2" Style="{StaticResource SectionCardStyle}" Padding="15,13">
                             <Grid>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="当前活跃连接" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding ActiveConnectionsCount}" FontSize="20" FontWeight="Bold" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding ActiveConnectionsCount}" FontSize="21" FontWeight="Bold" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <Border Width="34"
-                                        Height="34"
-                                        CornerRadius="8"
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="9"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource SemanticSuccessBorderBrush}"
                                         Background="{DynamicResource SemanticSuccessBgBrush}">
                                     <ui:SymbolIcon Symbol="Pulse24" FontSize="17" Foreground="{DynamicResource SemanticSuccessBrush}" />
                                 </Border>
@@ -1151,17 +1223,19 @@
                         </Border>
 
                         <!-- KPI 3: Total Upload -->
-                        <Border Grid.Column="4" Style="{StaticResource SectionCardStyle}" Padding="14,12">
+                        <Border Grid.Column="4" Style="{StaticResource SectionCardStyle}" Padding="15,13">
                             <Grid>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="累计上传流量" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding TotalBytesUpFormatted}" FontSize="20" FontWeight="Bold" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding TotalBytesUpFormatted}" FontSize="21" FontWeight="Bold" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <Border Width="34"
-                                        Height="34"
-                                        CornerRadius="8"
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="9"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource SemanticInfoBorderBrush}"
                                         Background="{DynamicResource SemanticInfoBgBrush}">
                                     <ui:SymbolIcon Symbol="ArrowUpload24" FontSize="17" Foreground="{DynamicResource SemanticInfoBrush}" />
                                 </Border>
@@ -1169,17 +1243,19 @@
                         </Border>
 
                         <!-- KPI 4: Total Download -->
-                        <Border Grid.Column="6" Style="{StaticResource SectionCardStyle}" Padding="14,12">
+                        <Border Grid.Column="6" Style="{StaticResource SectionCardStyle}" Padding="15,13">
                             <Grid>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="累计下载流量" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding TotalBytesDownFormatted}" FontSize="20" FontWeight="Bold" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding TotalBytesDownFormatted}" FontSize="21" FontWeight="Bold" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <Border Width="34"
-                                        Height="34"
-                                        CornerRadius="8"
+                                <Border Width="36"
+                                        Height="36"
+                                        CornerRadius="9"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource SemanticPurpleBorderBrush}"
                                         Background="{DynamicResource SemanticPurpleBgBrush}">
                                     <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="17" Foreground="{DynamicResource SemanticPurpleBrush}" />
                                 </Border>
@@ -1188,205 +1264,271 @@
                     </Grid>
 
                     <!-- Telemetry DataGrids -->
-                    <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedMonitorTabIndex}">
-                        <TabItem Header="实时网络连接">
-                            <DataGrid ItemsSource="{Binding FilteredConnections}"
-                                      AutoGenerateColumns="False"
-                                      IsReadOnly="True"
-                                      CanUserAddRows="False"
-                                      CanUserDeleteRows="False"
-                                      CanUserResizeRows="False"
-                                      HeadersVisibility="Column"
-                                      GridLinesVisibility="Horizontal"
-                                      HorizontalGridLinesBrush="{DynamicResource SubtleDividerBrush}"
-                                      RowHeight="36"
-                                      RowHeaderWidth="0"
-                                      SelectionMode="Single"
-                                      SelectionUnit="FullRow"
-                                      BorderThickness="1"
-                                      BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                      Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                                      Margin="0,8,0,0">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="时间" Binding="{Binding FormattedTime}" Width="96" ElementStyle="{StaticResource GridMonoTextStyle}" />
-                                    <DataGridTextColumn Header="进程" Binding="{Binding ProcessName}" Width="130" ElementStyle="{StaticResource GridCellTextStyle}" />
-                                    <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="66" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
-                                    <DataGridTextColumn Header="目标地址" Binding="{Binding TargetDisplay}" Width="220" ElementStyle="{StaticResource GridMonoTextStyle}" />
-                                    <DataGridTextColumn Header="Fake-IP" Binding="{Binding FakeIp}" Width="118" ElementStyle="{StaticResource GridMonoTextStyle}" />
-                                    <DataGridTextColumn Header="代理节点" Binding="{Binding ProxyName}" Width="125" ElementStyle="{StaticResource GridCellTextStyle}" />
-                                    <DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="74" ElementStyle="{StaticResource GridCellTextStyle}" />
+                    <TabControl Grid.Row="3" SelectedIndex="{Binding SelectedMonitorTabIndex}">
+                        <TabItem>
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="实时网络连接" VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource CompactPillBadgeStyle}" Margin="7,0,0,0">
+                                        <TextBlock Text="{Binding Connections.Count}"
+                                                   FontSize="10.5"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </TabItem.Header>
+                            <Border Margin="0,8,0,0"
+                                    CornerRadius="10"
+                                    ClipToBounds="True"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                <DataGrid ItemsSource="{Binding FilteredConnections}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          CanUserResizeRows="False"
+                                          HeadersVisibility="Column"
+                                          GridLinesVisibility="Horizontal"
+                                          HorizontalGridLinesBrush="{DynamicResource SubtleDividerBrush}"
+                                          ColumnHeaderStyle="{StaticResource ModernDataGridColumnHeaderStyle}"
+                                          RowStyle="{StaticResource ModernDataGridRowStyle}"
+                                          CellStyle="{StaticResource ModernDataGridCellStyle}"
+                                          RowHeight="36"
+                                          RowHeaderWidth="0"
+                                          SelectionMode="Single"
+                                          SelectionUnit="FullRow"
+                                          BorderThickness="0"
+                                          Background="Transparent">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="时间" Binding="{Binding FormattedTime}" Width="96" ElementStyle="{StaticResource GridMonoTextStyle}" />
+                                        <DataGridTextColumn Header="进程" Binding="{Binding ProcessName}" Width="130" ElementStyle="{StaticResource GridCellTextStyle}" />
+                                        <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="66" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                                        <DataGridTextColumn Header="目标地址" Binding="{Binding TargetDisplay}" Width="220" ElementStyle="{StaticResource GridMonoTextStyle}" />
+                                        <DataGridTextColumn Header="Fake-IP" Binding="{Binding FakeIp}" Width="118" ElementStyle="{StaticResource GridMonoTextStyle}" />
+                                        <DataGridTextColumn Header="代理节点" Binding="{Binding ProxyName}" Width="125" ElementStyle="{StaticResource GridCellTextStyle}" />
+                                        <DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="74" ElementStyle="{StaticResource GridCellTextStyle}" />
 
-                                    <!-- Status Pill Column -->
-                                    <DataGridTemplateColumn Header="状态" Width="96">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <Border CornerRadius="10"
-                                                        Padding="8,2"
-                                                        BorderThickness="1"
-                                                        HorizontalAlignment="Left"
-                                                        VerticalAlignment="Center"
-                                                        Margin="6,0">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
-                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Status}" Value="Active">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding Status}" Value="Connecting">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding Status}" Value="Error">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticErrorBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticErrorBorderBrush}" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="SemiBold">
-                                                        <TextBlock.Style>
-                                                            <Style TargetType="TextBlock">
-                                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <!-- Status Pill Column -->
+                                        <DataGridTemplateColumn Header="状态" Width="96">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Border CornerRadius="10"
+                                                            Padding="8,2"
+                                                            BorderThickness="1"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Center"
+                                                            Margin="6,0">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding Status}" Value="Active">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding Status}" Value="Connecting">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticWarningBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding Status}" Value="Error">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticErrorBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticErrorBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticErrorBorderBrush}" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
-                                                        </TextBlock.Style>
-                                                    </TextBlock>
-                                                </Border>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="SemiBold">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="Active">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="Connecting">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticWarningBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="Error">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticErrorBrush}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
 
-                                    <DataGridTextColumn Header="延迟(ms)" Binding="{Binding LatencyMs}" Width="76" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
-                                    <DataGridTextColumn Header="↑ 上传" Binding="{Binding FormattedUp}" Width="86" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
-                                    <DataGridTextColumn Header="↓ 下载" Binding="{Binding FormattedDown}" Width="86" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
-                                    <DataGridTextColumn Header="错误信息" Binding="{Binding ErrorMessage}" Width="*" ElementStyle="{StaticResource GridCellTextStyle}" />
-                                </DataGrid.Columns>
-                            </DataGrid>
+                                        <DataGridTextColumn Header="延迟(ms)" Binding="{Binding LatencyMs}" Width="76" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                                        <DataGridTextColumn Header="↑ 上传" Binding="{Binding FormattedUp}" Width="86" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                                        <DataGridTextColumn Header="↓ 下载" Binding="{Binding FormattedDown}" Width="86" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                                        <DataGridTextColumn Header="错误信息" Binding="{Binding ErrorMessage}" Width="*" ElementStyle="{StaticResource GridCellTextStyle}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Border>
                         </TabItem>
 
-                        <TabItem Header="注入与 DNS 事件">
-                            <DataGrid ItemsSource="{Binding ProcessEvents}"
-                                      AutoGenerateColumns="False"
-                                      IsReadOnly="True"
-                                      CanUserAddRows="False"
-                                      CanUserDeleteRows="False"
-                                      CanUserResizeRows="False"
-                                      HeadersVisibility="Column"
-                                      GridLinesVisibility="Horizontal"
-                                      HorizontalGridLinesBrush="{DynamicResource SubtleDividerBrush}"
-                                      RowHeight="36"
-                                      RowHeaderWidth="0"
-                                      SelectionMode="Single"
-                                      SelectionUnit="FullRow"
-                                      BorderThickness="1"
-                                      BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                      Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                                      Margin="0,8,0,0">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="时间" Binding="{Binding FormattedTime}" Width="96" ElementStyle="{StaticResource GridMonoTextStyle}" />
-                                    <DataGridTextColumn Header="会话" Binding="{Binding SessionId}" Width="58" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                        <TabItem>
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="注入与 DNS 事件" VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource CompactPillBadgeStyle}" Margin="7,0,0,0">
+                                        <TextBlock Text="{Binding ProcessEvents.Count}"
+                                                   FontSize="10.5"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </TabItem.Header>
+                            <Border Margin="0,8,0,0"
+                                    CornerRadius="10"
+                                    ClipToBounds="True"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                <DataGrid ItemsSource="{Binding ProcessEvents}"
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          CanUserResizeRows="False"
+                                          HeadersVisibility="Column"
+                                          GridLinesVisibility="Horizontal"
+                                          HorizontalGridLinesBrush="{DynamicResource SubtleDividerBrush}"
+                                          ColumnHeaderStyle="{StaticResource ModernDataGridColumnHeaderStyle}"
+                                          RowStyle="{StaticResource ModernDataGridRowStyle}"
+                                          CellStyle="{StaticResource ModernDataGridCellStyle}"
+                                          RowHeight="36"
+                                          RowHeaderWidth="0"
+                                          SelectionMode="Single"
+                                          SelectionUnit="FullRow"
+                                          BorderThickness="0"
+                                          Background="Transparent">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="时间" Binding="{Binding FormattedTime}" Width="96" ElementStyle="{StaticResource GridMonoTextStyle}" />
+                                        <DataGridTextColumn Header="会话" Binding="{Binding SessionId}" Width="58" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
 
-                                    <!-- Event Type Pill Column -->
-                                    <DataGridTemplateColumn Header="事件" Width="128">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <Border CornerRadius="6"
-                                                        Padding="8,2"
-                                                        BorderThickness="1"
-                                                        HorizontalAlignment="Left"
-                                                        VerticalAlignment="Center"
-                                                        Margin="6,0">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
-                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="Launched">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="HookInit">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="ChildSpawned">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="ConnectRedirect">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="DnsFakeIp">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticPurpleBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticPurpleBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="Warning">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding EventType}" Value="Error">
-                                                                    <Setter Property="Background" Value="{DynamicResource SemanticErrorBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticErrorBorderBrush}" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <TextBlock Text="{Binding EventType}" FontSize="11" FontWeight="SemiBold">
-                                                        <TextBlock.Style>
-                                                            <Style TargetType="TextBlock">
-                                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <!-- Event Type Pill Column -->
+                                        <DataGridTemplateColumn Header="事件" Width="134">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Border CornerRadius="6"
+                                                            Padding="8,2"
+                                                            BorderThickness="1"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Center"
+                                                            Margin="6,0">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="Launched">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding EventType}" Value="Injected">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="HookInit">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="ChildSpawned">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="ConnectRedirect">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding EventType}" Value="DnsResolved">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticPurpleBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticPurpleBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="DnsFakeIp">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticPurpleBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticPurpleBorderBrush}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding EventType}" Value="NetworkChanged">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="Warning">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticWarningBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding EventType}" Value="JobCleanup">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="Error">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticErrorBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticErrorBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticErrorBorderBrush}" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
-                                                        </TextBlock.Style>
-                                                    </TextBlock>
-                                                </Border>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding EventType}" FontSize="11" FontWeight="SemiBold">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="Launched">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="Injected">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="HookInit">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="ChildSpawned">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="ConnectRedirect">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="DnsResolved">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="DnsFakeIp">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="NetworkChanged">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="Warning">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticWarningBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="JobCleanup">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticWarningBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="Error">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticErrorBrush}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
 
-                                    <DataGridTextColumn Header="架构" Binding="{Binding Arch}" Width="58" ElementStyle="{StaticResource GridMonoTextStyle}" />
-                                    <DataGridTextColumn Header="进程" Binding="{Binding ProcessName}" Width="145" ElementStyle="{StaticResource GridCellTextStyle}" />
-                                    <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="68" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
-                                    <DataGridTextColumn Header="父PID" Binding="{Binding ParentPid}" Width="68" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
-                                    <DataGridTextColumn Header="详情" Binding="{Binding Message}" Width="*" ElementStyle="{StaticResource GridCellTextStyle}" />
-                                </DataGrid.Columns>
-                            </DataGrid>
+                                        <DataGridTextColumn Header="架构" Binding="{Binding Arch}" Width="58" ElementStyle="{StaticResource GridMonoTextStyle}" />
+                                        <DataGridTextColumn Header="进程" Binding="{Binding ProcessName}" Width="145" ElementStyle="{StaticResource GridCellTextStyle}" />
+                                        <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="68" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                                        <DataGridTextColumn Header="父PID" Binding="{Binding ParentPid}" Width="68" ElementStyle="{StaticResource GridMonoRightTextStyle}" />
+                                        <DataGridTextColumn Header="详情" Binding="{Binding Message}" Width="*" ElementStyle="{StaticResource GridCellTextStyle}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Border>
                         </TabItem>
                     </TabControl>
                 </Grid>
@@ -1404,25 +1546,24 @@
                         </Style>
                     </Grid.Style>
 
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
-                        <StackPanel MaxWidth="740" HorizontalAlignment="Left">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="系统设置" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                                <Border Style="{StaticResource PillBadgeStyle}"
-                                        Margin="10,0,0,0">
-                                    <TextBlock Text="{Binding AppVersionDisplay}"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                        <StackPanel MaxWidth="900" HorizontalAlignment="Stretch">
+                            <StackPanel Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="系统设置" Style="{StaticResource PageTitleTextStyle}" VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource PillBadgeStyle}" Margin="10,0,0,0">
+                                        <TextBlock Text="{Binding AppVersionDisplay}"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="个性化界面主题、配置测速探测目标、物理出口隔离策略并查看便携运行环境"
+                                           Style="{StaticResource PageSubtitleTextStyle}" />
                             </StackPanel>
-                            <TextBlock Text="个性化界面主题、配置节点连通性探测目标并查看便携运行环境"
-                                       FontSize="12"
-                                       Margin="0,2,0,16"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
 
                             <!-- Appearance Card -->
-                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,12">
+                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -1432,16 +1573,19 @@
                                     <Border Grid.Column="0"
                                             Width="38"
                                             Height="38"
-                                            CornerRadius="8"
+                                            CornerRadius="9"
                                             Margin="0,0,14,0"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource SemanticPurpleBorderBrush}"
                                             Background="{DynamicResource SemanticPurpleBgBrush}">
                                         <ui:SymbolIcon Symbol="Options24" FontSize="19" Foreground="{DynamicResource SemanticPurpleBrush}" />
                                     </Border>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                         <TextBlock Text="深色外观主题" FontSize="15" FontWeight="SemiBold" />
                                         <TextBlock Text="切换 Windows 11 Fluent 深色 / 浅色界面主题与语义徽章配色"
                                                    FontSize="12"
                                                    Margin="0,2,0,0"
+                                                   TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                     <ui:ToggleSwitch Grid.Column="2"
@@ -1451,13 +1595,15 @@
                             </Border>
 
                             <!-- Probe Target Card -->
-                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,12">
+                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
                                 <StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                         <Border Width="38"
                                                 Height="38"
-                                                CornerRadius="8"
+                                                CornerRadius="9"
                                                 Margin="0,0,14,0"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource SemanticInfoBorderBrush}"
                                                 Background="{DynamicResource SemanticInfoBgBrush}">
                                             <ui:SymbolIcon Symbol="Globe24" FontSize="19" Foreground="{DynamicResource SemanticInfoBrush}" />
                                         </Border>
@@ -1470,12 +1616,12 @@
                                         </StackPanel>
                                     </StackPanel>
 
-                                    <Grid Margin="52,2,0,0">
+                                    <Grid Margin="52,0,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="2*" />
-                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="10" />
                                             <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="10" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <ui:TextBox Grid.Column="0"
@@ -1493,7 +1639,7 @@
                             </Border>
 
                             <!-- Global TUN Bypass Card -->
-                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,12">
+                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -1504,12 +1650,14 @@
                                         <Border Grid.Column="0"
                                                 Width="38"
                                                 Height="38"
-                                                CornerRadius="8"
+                                                CornerRadius="9"
                                                 Margin="0,0,14,0"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource SemanticSuccessBorderBrush}"
                                                 Background="{DynamicResource SemanticSuccessBgBrush}">
                                             <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="19" Foreground="{DynamicResource SemanticSuccessBrush}" />
                                         </Border>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="全局 TUN 网卡隔离 (防双重代理)" FontSize="15" FontWeight="SemiBold" />
                                             <TextBlock Text="连接上游代理与节点测速时自动绕过 v2rayN / Clash 等全局 TUN 虚拟网卡，并在网线拔插或切换 Wi-Fi 时自动故障转移"
                                                        FontSize="12"
@@ -1536,15 +1684,22 @@
                                                   IsEnabled="{Binding BypassGlobalTun}" />
                                         <ui:Button Grid.Column="2"
                                                    Content="刷新网卡"
+                                                   Icon="{ui:SymbolIcon ArrowSync24}"
                                                    Appearance="Secondary"
                                                    Command="{Binding RefreshOutboundInterfacesCommand}" />
                                     </Grid>
 
-                                    <TextBlock Margin="52,8,0,0"
-                                               Text="{Binding OutboundNetworkSummary}"
-                                               FontSize="11.5"
-                                               TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <Border Margin="52,10,0,0"
+                                            CornerRadius="7"
+                                            Padding="10,7"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource SubtleDividerBrush}"
+                                            Background="{DynamicResource InputSurfaceBgBrush}">
+                                        <TextBlock Text="{Binding OutboundNetworkSummary}"
+                                                   FontSize="11.5"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
                                 </StackPanel>
                             </Border>
 
@@ -1560,12 +1715,14 @@
                                         <Border Grid.Column="0"
                                                 Width="38"
                                                 Height="38"
-                                                CornerRadius="8"
+                                                CornerRadius="9"
                                                 Margin="0,0,14,0"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource SemanticTealBorderBrush}"
                                                 Background="{DynamicResource SemanticTealBgBrush}">
                                             <ui:SymbolIcon Symbol="FolderOpen24" FontSize="19" Foreground="{DynamicResource SemanticTealBrush}" />
                                         </Border>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                             <TextBlock Text="应用数据与配置文件位置" FontSize="15" FontWeight="SemiBold" />
                                             <TextBlock Text="配置 (config.json)、隔离浏览器环境 (profiles\) 与日志 (logs\) 均保存在程序相对目录 data\ 下"
                                                        FontSize="12"
@@ -1573,7 +1730,7 @@
                                                        TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                             <ui:Button Content="打开数据目录"
                                                        Icon="{ui:SymbolIcon FolderOpen24}"
                                                        Appearance="Secondary"
@@ -1586,12 +1743,12 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <Border Margin="52,10,0,0"
-                                            CornerRadius="6"
-                                            Padding="10,7"
+                                    <Border Margin="52,12,0,0"
+                                            CornerRadius="7"
+                                            Padding="11,8"
                                             BorderThickness="1"
                                             BorderBrush="{DynamicResource SubtleDividerBrush}"
-                                            Background="{DynamicResource IconContainerBgBrush}">
+                                            Background="{DynamicResource InputSurfaceBgBrush}">
                                         <StackPanel>
                                             <TextBlock Text="{Binding ConfigFilePath}"
                                                        FontSize="12"
@@ -1622,28 +1779,51 @@
 
         <!-- Bottom Status Bar -->
         <Border Grid.Row="2"
-                Padding="16,6"
+                Padding="16,7"
                 Background="{DynamicResource StatusBarBackgroundBrush}"
                 BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
             <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Width="7"
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Grid.Column="0"
+                             Width="7"
                              Height="7"
                              Margin="0,0,8,0"
-                             Fill="{DynamicResource AppAccentBrush}"
-                             VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding StatusMessage}"
+                             VerticalAlignment="Center">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{DynamicResource AppAccentBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasActiveBridges}" Value="True">
+                                        <Setter Property="Fill" Value="{DynamicResource SemanticSuccessBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding StatusMessage}"
                                FontSize="12"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding StatusMessage}"
                                VerticalAlignment="Center" />
-                </StackPanel>
+                </Grid>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding BridgeStatusText}"
                                FontSize="12"
                                VerticalAlignment="Center"
-                               Margin="0,0,12,0"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Border Style="{StaticResource ToolbarVerticalDividerStyle}" Height="14" Margin="12,0,10,0" />
                     <ui:Button Content="切换主题"
                                Appearance="Transparent"
                                FontSize="11.5"

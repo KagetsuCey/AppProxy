@@ -44,6 +44,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<OutboundInterfaceChoice> OutboundInterfaceChoices { get; } = new();
 
     public ICollectionView FilteredApps { get; }
+    public ICollectionView FilteredProxies { get; }
     public ICollectionView FilteredConnections { get; }
 
     public string ConfigFilePath => _configService.ConfigPath;
@@ -58,6 +59,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _appSearchText = string.Empty;
+
+    [ObservableProperty]
+    private string _proxySearchText = string.Empty;
 
     [ObservableProperty]
     private string _connectionSearchText = string.Empty;
@@ -134,6 +138,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FilteredApps = CollectionViewSource.GetDefaultView(Apps);
         FilteredApps.Filter = FilterAppPredicate;
 
+        FilteredProxies = CollectionViewSource.GetDefaultView(Proxies);
+        FilteredProxies.Filter = FilterProxyPredicate;
+
         FilteredConnections = CollectionViewSource.GetDefaultView(Connections);
         FilteredConnections.Filter = FilterConnectionPredicate;
 
@@ -149,6 +156,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     partial void OnAppSearchTextChanged(string value) => FilteredApps.Refresh();
+    partial void OnProxySearchTextChanged(string value) => FilteredProxies.Refresh();
     partial void OnConnectionSearchTextChanged(string value) => FilteredConnections.Refresh();
 
     partial void OnBypassGlobalTunChanged(bool value)
@@ -253,6 +261,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(AppSearchText)) return true;
         return app.Name.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase) ||
                app.ExePath.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool FilterProxyPredicate(object obj)
+    {
+        if (obj is not ProxyProfile proxy) return false;
+        if (string.IsNullOrWhiteSpace(ProxySearchText)) return true;
+        return proxy.Name.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.Host.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.EndpointDisplay.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.ProtocolDisplay.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.ExitIp.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.ExitLocation.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.ExitCountryCode.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.ExitIsp.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool FilterConnectionPredicate(object obj)
@@ -589,6 +611,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (info is not null)
         {
             SaveConfiguration();
+            if (!string.IsNullOrWhiteSpace(ProxySearchText))
+            {
+                FilteredProxies.Refresh();
+            }
             StatusMessage = $"{proxy.Name} 落地出口: {proxy.ExitBadgeText}";
         }
         else
@@ -631,6 +657,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (succeeded > 0)
         {
             SaveConfiguration();
+            if (!string.IsNullOrWhiteSpace(ProxySearchText))
+            {
+                FilteredProxies.Refresh();
+            }
         }
         StatusMessage = $"全部出口检测完成: {succeeded}/{list.Count} 个节点成功识别";
     }
