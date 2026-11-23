@@ -56,6 +56,15 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void OnBatchImportProxiesClick(object sender, RoutedEventArgs e)
+    {
+        var dlg = new ProxyBatchImportDialog(App.ViewModel.Proxies) { Owner = this };
+        if (dlg.ShowDialog() == true && dlg.ImportedProxies.Count > 0)
+        {
+            App.ViewModel.ImportProxies(dlg.ImportedProxies, dlg.SkipDuplicates);
+        }
+    }
+
     private void OnCloneProxyClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;

@@ -62,12 +62,27 @@ public partial class ProxyEditDialog : FluentWindow
         }
 
         string tag = (ProtocolCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Socks5";
-        ResultProxy.Protocol = Enum.TryParse<ProxyProtocol>(tag, out var proto) ? proto : ProxyProtocol.Socks5;
+        ProxyProtocol newProto = Enum.TryParse<ProxyProtocol>(tag, out var proto) ? proto : ProxyProtocol.Socks5;
+        bool endpointChanged =
+            ResultProxy.Protocol != newProto ||
+            !string.Equals(ResultProxy.Host, host, StringComparison.OrdinalIgnoreCase) ||
+            ResultProxy.Port != port;
+
+        ResultProxy.Protocol = newProto;
         ResultProxy.Host = host;
         ResultProxy.Port = port;
         ResultProxy.Name = string.IsNullOrWhiteSpace(NameBox.Text) ? $"{ResultProxy.ProtocolDisplay} {host}:{port}" : NameBox.Text.Trim();
         ResultProxy.Username = UsernameBox.Text.Trim();
         ResultProxy.Password = PasswordInput.Password ?? string.Empty;
+
+        if (endpointChanged)
+        {
+            ResultProxy.ExitIp = string.Empty;
+            ResultProxy.ExitCountryCode = string.Empty;
+            ResultProxy.ExitLocation = string.Empty;
+            ResultProxy.ExitIsp = string.Empty;
+            ResultProxy.ExitDetectError = string.Empty;
+        }
 
         DialogResult = true;
         Close();

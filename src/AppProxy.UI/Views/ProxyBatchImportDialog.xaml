@@ -1,0 +1,200 @@
+<ui:FluentWindow x:Class="AppProxy.UI.Views.ProxyBatchImportDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="批量导入代理节点"
+                 Width="680"
+                 Height="680"
+                 MinWidth="580"
+                 MinHeight="560"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 Icon="pack://application:,,,/Assets/AppProxy.ico">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="批量导入代理节点" ShowMaximize="False" ShowMinimize="False" />
+
+        <Grid Grid.Row="1" Margin="20,10,20,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="170" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Format Hint Banner -->
+            <Border Grid.Row="0"
+                    CornerRadius="10"
+                    Padding="14,10"
+                    Margin="0,0,0,12"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource SemanticInfoBorderBrush}"
+                    Background="{DynamicResource SemanticInfoBgBrush}">
+                <StackPanel>
+                    <TextBlock Text="支持多格式每行一条或整段 JSON 导入" FontSize="13.5" FontWeight="SemiBold" />
+                    <TextBlock Text="支持: socks5://user:pass@host:port#备注 · http(s)://host:port · host:port:user:pass · user:pass@host:port · host:port · AppProxy JSON"
+                               FontSize="11.5"
+                               Margin="0,3,0,0"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Input Toolbar -->
+            <Grid Grid.Row="1" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="从剪贴板粘贴"
+                               Icon="{ui:SymbolIcon Copy24}"
+                               Appearance="Secondary"
+                               Margin="0,0,8,0"
+                               Click="OnPasteClipboardClick" />
+                    <ui:Button Content="从文件打开"
+                               Icon="{ui:SymbolIcon FolderOpen24}"
+                               Appearance="Secondary"
+                               Margin="0,0,8,0"
+                               Click="OnOpenFileClick" />
+                    <ui:Button Content="清空"
+                               Icon="{ui:SymbolIcon Broom24}"
+                               Appearance="Secondary"
+                               Click="OnClearClick" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Raw Text Input -->
+            <TextBox x:Name="InputTextBox"
+                     Grid.Row="2"
+                     AcceptsReturn="True"
+                     AcceptsTab="False"
+                     TextWrapping="NoWrap"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Padding="10,8"
+                     VerticalContentAlignment="Top"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextChanged="OnInputOrOptionChanged" />
+
+            <!-- Parse Options -->
+            <Grid Grid.Row="3" Margin="0,10,0,10">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="纯文本默认协议:" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="Medium" />
+                    <ComboBox x:Name="DefaultProtocolCombo"
+                              Width="150"
+                              SelectionChanged="OnProtocolSelectionChanged">
+                        <ComboBoxItem Content="SOCKS5" Tag="Socks5" IsSelected="True" />
+                        <ComboBoxItem Content="HTTP (CONNECT)" Tag="Http" />
+                        <ComboBoxItem Content="HTTPS (TLS)" Tag="Https" />
+                    </ComboBox>
+                </StackPanel>
+
+                <CheckBox x:Name="SkipDuplicatesCheckBox"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Center"
+                          IsChecked="True"
+                          Content="跳过已存在的重复节点"
+                          Checked="OnInputOrOptionChanged"
+                          Unchecked="OnInputOrOptionChanged" />
+            </Grid>
+
+            <!-- Parse Summary + Errors -->
+            <StackPanel Grid.Row="4" Margin="0,0,0,8">
+                <TextBlock x:Name="SummaryTextBlock"
+                           FontSize="12.5"
+                           FontWeight="SemiBold"
+                           Text="请在上方粘贴或打开代理节点列表" />
+                <Border x:Name="ErrorBoxBorder"
+                        Visibility="Collapsed"
+                        Margin="0,6,0,0"
+                        Padding="10,8"
+                        CornerRadius="8"
+                        MaxHeight="88"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource SemanticErrorBorderBrush}"
+                        Background="{DynamicResource SemanticErrorBgBrush}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="ErrorDetailsTextBlock"
+                                   FontFamily="Consolas"
+                                   FontSize="11.5"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SemanticErrorBrush}" />
+                    </ScrollViewer>
+                </Border>
+            </StackPanel>
+
+            <!-- Preview List -->
+            <Border Grid.Row="5"
+                    CornerRadius="8"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <ListView x:Name="PreviewListView"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="4,3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding ProtocolText}"
+                                           FontWeight="SemiBold"
+                                           FontSize="11.5"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SemanticInfoBrush}" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           FontSize="12"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding EndpointText}"
+                                           FontFamily="Consolas"
+                                           FontSize="11.5"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding StatusText}"
+                                           FontSize="11.5"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{Binding StatusBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Border Grid.Row="2"
+                Padding="20,12,20,14"
+                Background="{DynamicResource StatusBarBackgroundBrush}"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="取消" Appearance="Secondary" Click="OnCancelClick" Margin="0,0,10,0" Width="92" />
+                <ui:Button x:Name="ImportButton"
+                           Content="导入 (0)"
+                           Appearance="Primary"
+                           IsEnabled="False"
+                           Click="OnImportClick"
+                           MinWidth="112" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

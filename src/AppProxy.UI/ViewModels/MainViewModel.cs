@@ -483,6 +483,158 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = $"Saved proxy: {edited.Name}";
     }
 
+    public (int Added, int Skipped) ImportProxies(IEnumerable<ProxyProfile> incoming, bool skipDuplicates = true)
+    {
+        ArgumentNullException.ThrowIfNull(incoming);
+
+        var existingKeys = new HashSet<string>(
+            Proxies.Select(ProxyBatchParser.BuildDedupeKey),
+            StringComparer.Ordinal);
+        var existingNames = new HashSet<string>(
+            Proxies.Select(p => p.Name).Where(n => !string.IsNullOrWhiteSpace(n)),
+            StringComparer.OrdinalIgnoreCase);
+
+        int added = 0;
+        int skipped = 0;
+
+        foreach (ProxyProfile candidate in incoming)
+        {
+            string key = ProxyBatchParser.BuildDedupeKey(candidate);
+            if (skipDuplicates && !existingKeys.Add(key))
+            {
+                skipped++;
+                continue;
+            }
+
+            var toAdd = new ProxyProfile
+            {
+                Id = Guid.NewGuid(),
+                Protocol = candidate.Protocol,
+                Host = candidate.Host.Trim(),
+                Port = candidate.Port,
+                Username = candidate.Username.Trim(),
+                Password = candidate.Password
+            };
+
+            string desiredName = string.IsNullOrWhiteSpace(candidate.Name)
+                ? $"{toAdd.ProtocolDisplay} {toAdd.Host}:{toAdd.Port}"
+                : candidate.Name.Trim();
+
+            if (!existingNames.Add(desiredName))
+            {
+                desiredName = ProxyProfile.BuildDuplicateName(desiredName, existingNames);
+                existingNames.Add(desiredName);
+            }
+            toAdd.Name = desiredName;
+
+            Proxies.Add(toAdd);
+            added++;
+        }
+
+        if (added > 0)
+        {
+            SaveConfiguration();
+        }
+
+        StatusMessage = skipped > 0
+            ? $"已批量导入 {added} 个代理节点（跳过 {skipped} 个重复节点）"
+            : $"已批量导入 {added} 个代理节点";
+        return (added, skipped);
+    }
+
+    [RelayCommand]
+    private void ExportProxiesToClipboard()
+    {
+        if (Proxies.Count == 0)
+        {
+            StatusMessage = "暂无可导出的代理节点";
+            return;
+        }
+
+        try
+        {
+            string uriText = ProxyBatchParser.ExportToUriLines(Proxies);
+            Clipboard.SetText(uriText);
+            StatusMessage = $"已导出 {Proxies.Count} 个代理节点 URI 到剪贴板";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"导出代理节点失败: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void CopyProxyExitIp(ProxyProfile? proxy)
+    {
+        if (proxy is null || string.IsNullOrWhiteSpace(proxy.ExitIp)) return;
+        try
+        {
+            Clipboard.SetText(proxy.ExitIp);
+            StatusMessage = $"已复制出口 IP: {proxy.ExitIp}";
+        }
+        catch
+        {
+            StatusMessage = "复制出口 IP 失败";
+        }
+    }
+
+    [RelayCommand]
+    private async Task DetectProxyExitIpAsync(ProxyProfile? proxy)
+    {
+        if (proxy is null || proxy.IsDetectingExitIp) return;
+        string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
+        ProxyExitIpInfo? info = await ProxyExitIpDetector.DetectAsync(proxy, BypassGlobalTun, preferredNic);
+        if (info is not null)
+        {
+            SaveConfiguration();
+            StatusMessage = $"{proxy.Name} 落地出口: {proxy.ExitBadgeText}";
+        }
+        else
+        {
+            StatusMessage = $"{proxy.Name} 出口检测失败: {proxy.ExitDetectError}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task DetectAllProxiesExitIpAsync()
+    {
+        if (Proxies.Count == 0) return;
+
+        string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
+            ? null
+            : PreferredOutboundInterface;
+        using var gate = new SemaphoreSlim(4, 4);
+        int succeeded = 0;
+        var list = Proxies.ToList();
+
+        var tasks = list.Select(async proxy =>
+        {
+            if (proxy.IsDetectingExitIp) return;
+            await gate.WaitAsync();
+            try
+            {
+                ProxyExitIpInfo? info = await ProxyExitIpDetector.DetectAsync(proxy, BypassGlobalTun, preferredNic);
+                if (info is not null)
+                {
+                    Interlocked.Increment(ref succeeded);
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        if (succeeded > 0)
+        {
+            SaveConfiguration();
+        }
+        StatusMessage = $"全部出口检测完成: {succeeded}/{list.Count} 个节点成功识别";
+    }
+
     [RelayCommand]
     private void DeleteProxy(ProxyProfile? proxy)
     {

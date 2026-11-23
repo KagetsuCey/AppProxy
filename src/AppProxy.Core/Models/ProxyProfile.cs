@@ -39,6 +39,30 @@ public partial class ProxyProfile : ObservableObject
     private string _password = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasExitInfo))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeText))]
+    [NotifyPropertyChangedFor(nameof(ExitTooltipText))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeState))]
+    private string _exitIp = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasExitInfo))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeText))]
+    [NotifyPropertyChangedFor(nameof(ExitTooltipText))]
+    private string _exitCountryCode = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasExitInfo))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeText))]
+    [NotifyPropertyChangedFor(nameof(ExitTooltipText))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeState))]
+    private string _exitLocation = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ExitTooltipText))]
+    private string _exitIsp = string.Empty;
+
+    [ObservableProperty]
     [property: JsonIgnore]
     [NotifyPropertyChangedFor(nameof(LatencyDisplay))]
     [NotifyPropertyChangedFor(nameof(LatencyLevel))]
@@ -55,6 +79,22 @@ public partial class ProxyProfile : ObservableObject
     [NotifyPropertyChangedFor(nameof(LatencyDisplay))]
     [NotifyPropertyChangedFor(nameof(LatencyLevel))]
     private bool _isTesting;
+
+    [ObservableProperty]
+    [property: JsonIgnore]
+    [NotifyPropertyChangedFor(nameof(HasExitInfo))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeText))]
+    [NotifyPropertyChangedFor(nameof(ExitTooltipText))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeState))]
+    private bool _isDetectingExitIp;
+
+    [ObservableProperty]
+    [property: JsonIgnore]
+    [NotifyPropertyChangedFor(nameof(HasExitInfo))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeText))]
+    [NotifyPropertyChangedFor(nameof(ExitTooltipText))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeState))]
+    private string _exitDetectError = string.Empty;
 
     [JsonIgnore]
     public string ProtocolDisplay => Protocol switch
@@ -100,6 +140,86 @@ public partial class ProxyProfile : ObservableObject
         }
     }
 
+    [JsonIgnore]
+    public bool HasExitInfo =>
+        IsDetectingExitIp ||
+        !string.IsNullOrWhiteSpace(ExitIp) ||
+        !string.IsNullOrWhiteSpace(ExitLocation) ||
+        !string.IsNullOrWhiteSpace(ExitDetectError);
+
+    [JsonIgnore]
+    public string ExitBadgeState
+    {
+        get
+        {
+            if (IsDetectingExitIp) return "Detecting";
+            if (!string.IsNullOrWhiteSpace(ExitIp) || !string.IsNullOrWhiteSpace(ExitLocation)) return "Ok";
+            if (!string.IsNullOrWhiteSpace(ExitDetectError)) return "Error";
+            return "None";
+        }
+    }
+
+    [JsonIgnore]
+    public string ExitBadgeText
+    {
+        get
+        {
+            if (IsDetectingExitIp) return "检测出口中...";
+            if (!string.IsNullOrWhiteSpace(ExitIp) || !string.IsNullOrWhiteSpace(ExitLocation))
+            {
+                var parts = new List<string>(3);
+                string cc = ExitCountryCode.Trim();
+                string loc = ExitLocation.Trim();
+                string ip = ExitIp.Trim();
+
+                if (!string.IsNullOrEmpty(cc))
+                {
+                    parts.Add(cc);
+                }
+                if (!string.IsNullOrEmpty(loc) &&
+                    !string.Equals(loc, cc, StringComparison.OrdinalIgnoreCase))
+                {
+                    parts.Add(loc);
+                }
+                if (!string.IsNullOrEmpty(ip))
+                {
+                    parts.Add(ip);
+                }
+                return string.Join(" · ", parts);
+            }
+
+            return ExitDetectError.Trim();
+        }
+    }
+
+    [JsonIgnore]
+    public string ExitTooltipText
+    {
+        get
+        {
+            if (IsDetectingExitIp) return "正在经由代理节点探测落地出口 IP 与地区...";
+            if (!string.IsNullOrWhiteSpace(ExitIp) || !string.IsNullOrWhiteSpace(ExitLocation))
+            {
+                var lines = new List<string>(4);
+                if (!string.IsNullOrWhiteSpace(ExitIp)) lines.Add($"出口 IP: {ExitIp}");
+                if (!string.IsNullOrWhiteSpace(ExitLocation))
+                {
+                    string region = string.IsNullOrWhiteSpace(ExitCountryCode)
+                        ? ExitLocation
+                        : $"{ExitLocation} ({ExitCountryCode})";
+                    lines.Add($"归属地: {region}");
+                }
+                if (!string.IsNullOrWhiteSpace(ExitIsp)) lines.Add($"运营商: {ExitIsp}");
+                if (!string.IsNullOrWhiteSpace(ExitIp)) lines.Add("点击可复制出口 IP");
+                return string.Join(Environment.NewLine, lines);
+            }
+
+            return !string.IsNullOrWhiteSpace(ExitDetectError)
+                ? $"上次检测失败: {ExitDetectError}"
+                : string.Empty;
+        }
+    }
+
     private static readonly Regex CopySuffixRegex = new(@"\s*\(副本(?:\s+\d+)?\)$", RegexOptions.Compiled);
 
     public static string BuildDuplicateName(string? sourceName, IEnumerable<string>? existingNames = null)
@@ -142,9 +262,15 @@ public partial class ProxyProfile : ObservableObject
         Port = Port,
         Username = Username,
         Password = Password,
+        ExitIp = string.Empty,
+        ExitCountryCode = string.Empty,
+        ExitLocation = string.Empty,
+        ExitIsp = string.Empty,
         LastLatencyMs = null,
         LastTestStatus = "Untested",
-        IsTesting = false
+        IsTesting = false,
+        IsDetectingExitIp = false,
+        ExitDetectError = string.Empty
     };
 
     public ProxyProfile Clone() => new()
@@ -156,6 +282,10 @@ public partial class ProxyProfile : ObservableObject
         Port = Port,
         Username = Username,
         Password = Password,
+        ExitIp = ExitIp,
+        ExitCountryCode = ExitCountryCode,
+        ExitLocation = ExitLocation,
+        ExitIsp = ExitIsp,
         LastLatencyMs = LastLatencyMs,
         LastTestStatus = LastTestStatus
     };
