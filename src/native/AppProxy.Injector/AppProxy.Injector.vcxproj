@@ -69,6 +69,10 @@
       <EnableCOMDATFolding Condition="'$(Configuration)'=='Release'">true</EnableCOMDATFolding>
       <OptimizeReferences Condition="'$(Configuration)'=='Release'">true</OptimizeReferences>
     </Link>
+    <ResourceCompile>
+      <PreprocessorDefinitions>APPPROXY_VER_MAJOR=$(AppProxyVersionMajor);APPPROXY_VER_MINOR=$(AppProxyVersionMinor);APPPROXY_VER_PATCH=$(AppProxyVersionPatch);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Platform)'=='x64'">APPPROXY_ARCH_X64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
 
   <ItemGroup>
@@ -79,6 +83,10 @@
   <ItemGroup>
     <ClCompile Include="OepInjector.cpp" />
     <ClCompile Include="main.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="Version.rc" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

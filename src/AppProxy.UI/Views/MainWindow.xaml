@@ -59,7 +59,17 @@
                                    VerticalAlignment="Center"
                                    RenderOptions.BitmapScalingMode="HighQuality" />
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="AppProxy" FontSize="14" FontWeight="Bold" />
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="AppProxy" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource PillBadgeStyle}"
+                                            Padding="5,1"
+                                            Margin="6,0,0,0">
+                                        <TextBlock Text="{Binding AppVersionDisplay}"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
                                 <TextBlock Text="进程级透明代理引擎"
                                            FontSize="11"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -1305,7 +1315,16 @@
 
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
                         <StackPanel MaxWidth="740" HorizontalAlignment="Left">
-                            <TextBlock Text="系统设置" FontSize="22" FontWeight="Bold" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="系统设置" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
+                                <Border Style="{StaticResource PillBadgeStyle}"
+                                        Margin="10,0,0,0">
+                                    <TextBlock Text="{Binding AppVersionDisplay}"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Border>
+                            </StackPanel>
                             <TextBlock Text="个性化界面主题、配置节点连通性探测目标并查看便携运行环境"
                                        FontSize="12"
                                        Margin="0,2,0,16"

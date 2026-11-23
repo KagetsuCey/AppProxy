@@ -175,16 +175,16 @@ if (-not $SkipNative) {
     $msbuild = Resolve-MsBuildPath
     Write-Host "`n[1/6] Building Native Hook & Injector (Win32 & x64 Release)..." -ForegroundColor Yellow
 
-    & $msbuild "src\native\AppProxy.Hook\AppProxy.Hook.vcxproj" /p:Configuration=Release /p:Platform=Win32 /m
+    & $msbuild "src\native\AppProxy.Hook\AppProxy.Hook.vcxproj" /p:Configuration=Release /p:Platform=Win32 /p:AppProxyVersion=$AppVersion /m
     if ($LASTEXITCODE -ne 0) { throw "Native Hook (Win32) build failed." }
 
-    & $msbuild "src\native\AppProxy.Injector\AppProxy.Injector.vcxproj" /p:Configuration=Release /p:Platform=Win32 /m
+    & $msbuild "src\native\AppProxy.Injector\AppProxy.Injector.vcxproj" /p:Configuration=Release /p:Platform=Win32 /p:AppProxyVersion=$AppVersion /m
     if ($LASTEXITCODE -ne 0) { throw "Native Injector (Win32) build failed." }
 
-    & $msbuild "src\native\AppProxy.Hook\AppProxy.Hook.vcxproj" /p:Configuration=Release /p:Platform=x64 /m
+    & $msbuild "src\native\AppProxy.Hook\AppProxy.Hook.vcxproj" /p:Configuration=Release /p:Platform=x64 /p:AppProxyVersion=$AppVersion /m
     if ($LASTEXITCODE -ne 0) { throw "Native Hook (x64) build failed." }
 
-    & $msbuild "src\native\AppProxy.Injector\AppProxy.Injector.vcxproj" /p:Configuration=Release /p:Platform=x64 /m
+    & $msbuild "src\native\AppProxy.Injector\AppProxy.Injector.vcxproj" /p:Configuration=Release /p:Platform=x64 /p:AppProxyVersion=$AppVersion /m
     if ($LASTEXITCODE -ne 0) { throw "Native Injector (x64) build failed." }
 }
 else {
@@ -262,6 +262,14 @@ foreach ($bin in $nativeBinaries) {
     Copy-Item -Path $bin -Destination $stageNativeDir -Force
 }
 
+foreach ($docName in @("LICENSE", "THIRD-PARTY-NOTICES.txt")) {
+    $docPath = Join-Path $Root $docName
+    if (-not (Test-Path $docPath)) {
+        throw "Required license/notice file missing: $docPath"
+    }
+    Copy-Item -Path $docPath -Destination $stageDir -Force
+}
+
 # Remove debug symbols and any unintended dev/runtime data files from package staging
 Get-ChildItem -Path $stageDir -Recurse -Filter "*.pdb" -File | Remove-Item -Force
 Get-ChildItem -Path $stageDir -Recurse -Filter "*.log" -File | Remove-Item -Force
@@ -291,7 +299,9 @@ $requiredStageFiles = @(
     "native\AppProxy.Hook.x64.dll",
     "native\AppProxy.Injector.x64.exe",
     "native\AppProxy.Hook.x86.dll",
-    "native\AppProxy.Injector.x86.exe"
+    "native\AppProxy.Injector.x86.exe",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.txt"
 )
 
 foreach ($rel in $requiredStageFiles) {

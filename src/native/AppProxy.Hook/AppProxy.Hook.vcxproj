@@ -71,6 +71,10 @@
       <OptimizeReferences Condition="'$(Configuration)'=='Release'">true</OptimizeReferences>
       <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ResourceCompile>
+      <PreprocessorDefinitions>APPPROXY_VER_MAJOR=$(AppProxyVersionMajor);APPPROXY_VER_MINOR=$(AppProxyVersionMinor);APPPROXY_VER_PATCH=$(AppProxyVersionPatch);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Platform)'=='x64'">APPPROXY_ARCH_X64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
 
   <!-- Automatically download MinHook v1.3.3 sources on first build if missing -->
@@ -133,6 +137,10 @@
       <SDLCheck>false</SDLCheck>
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="Version.rc" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

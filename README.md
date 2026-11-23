@@ -105,6 +105,7 @@ AppProxy.sln
   Get-CimInstance Win32_Process -Filter "Name='AppProxy.Bridge.exe'" | Select-Object ProcessId, CommandLine
   ```
   经 UI 启动的桥接进程命令行应仅包含 `--launch-stdin`，不含代理账号密码。
+- **SmartScreen 拦截或杀软误报**：由于当前发布包尚未配置代码签名证书，且程序包含 APC 注入与 Winsock/WinHTTP Hook 原生模块，Windows SmartScreen 或部分安全软件可能会发出提示。请务必对比发布页 `SHA256SUMS.txt` 校验压缩包/安装包哈希，确认一致后点击「仍要运行」或将程序目录加入安全软件白名单。
 
 ## 构建与打包
 
@@ -166,9 +167,14 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
    - `AppProxy.UI` 默认使用 `--launch-stdin` 匿名管道隐藏代理凭据，同时必须保留 `--launch-app-id <Guid>`（桌面快捷方式）与 `--launch-b64`（测试/脚本兼容）。
    - 运行 `scripts\package.ps1` 会先清空 `artifacts\package\AppProxy\`；若日常曾直接在该目录运行并生成了 `data\config.json`，打包前请先备份其中的 `data\` 目录。
 6. **回归测试基线**：
-   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **51 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、Fake-IP 缓存一致性、UI 并发队列及真实 `WinHTTP / webio.dll` 端到端转发）。
+   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **53 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
 
 ## 已知限制
 
 - 受 Windows 系统安全机制保护的 **Protected Process Light (PPL)** 系统进程或 **UWP / Microsoft Store AppContainer** 沙盒应用会拦截用户态注入。
 - 当前版本转发 TCP 流量；UDP 流量不走代理隧道。
+
+## 开源协议
+
+- 本项目采用 [MIT License](LICENSE) 开源。
+- 第三方开源组件版权与许可声明见 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)（包含 MinHook v1.3.3 BSD-2-Clause、WPF-UI MIT 与 CommunityToolkit.Mvvm MIT）。

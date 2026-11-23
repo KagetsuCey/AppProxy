@@ -1,0 +1,65 @@
+#include <winver.h>
+
+#ifndef APPPROXY_VER_MAJOR
+#define APPPROXY_VER_MAJOR 1
+#endif
+
+#ifndef APPPROXY_VER_MINOR
+#define APPPROXY_VER_MINOR 0
+#endif
+
+#ifndef APPPROXY_VER_PATCH
+#define APPPROXY_VER_PATCH 0
+#endif
+
+#define APX_STR_IMPL(x) #x
+#define APX_STR(x) APX_STR_IMPL(x)
+
+#define APX_FILE_VERSION_STR \
+    APX_STR(APPPROXY_VER_MAJOR) "." APX_STR(APPPROXY_VER_MINOR) "." APX_STR(APPPROXY_VER_PATCH) ".0"
+
+#define APX_PRODUCT_VERSION_STR \
+    APX_STR(APPPROXY_VER_MAJOR) "." APX_STR(APPPROXY_VER_MINOR) "." APX_STR(APPPROXY_VER_PATCH)
+
+#ifdef APPPROXY_ARCH_X64
+#define APX_FILE_DESC   "AppProxy Native Suspended APC Injector (x64)"
+#define APX_INT_NAME    "AppProxy.Injector.x64"
+#define APX_ORIG_NAME   "AppProxy.Injector.x64.exe"
+#else
+#define APX_FILE_DESC   "AppProxy Native Suspended APC Injector (x86)"
+#define APX_INT_NAME    "AppProxy.Injector.x86"
+#define APX_ORIG_NAME   "AppProxy.Injector.x86.exe"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION APPPROXY_VER_MAJOR,APPPROXY_VER_MINOR,APPPROXY_VER_PATCH,0
+ PRODUCTVERSION APPPROXY_VER_MAJOR,APPPROXY_VER_MINOR,APPPROXY_VER_PATCH,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "AppProxy"
+            VALUE "FileDescription", APX_FILE_DESC
+            VALUE "FileVersion", APX_FILE_VERSION_STR
+            VALUE "InternalName", APX_INT_NAME
+            VALUE "LegalCopyright", "Copyright (C) 2026 AppProxy"
+            VALUE "OriginalFilename", APX_ORIG_NAME
+            VALUE "ProductName", "AppProxy"
+            VALUE "ProductVersion", APX_PRODUCT_VERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

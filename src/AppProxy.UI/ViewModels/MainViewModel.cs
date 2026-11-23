@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Threading;
@@ -44,6 +45,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public string ConfigFilePath => _configService.ConfigPath;
     public string DataDirectoryPath => AppPaths.GetDataDirectory();
+    public string AppVersionDisplay { get; } = ResolveAppVersionDisplay();
 
     [ObservableProperty]
     private int _selectedNavIndex;
@@ -537,6 +539,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _config.TestProbeHost = TestProbeHost;
         _config.TestProbePort = TestProbePort;
         _configService.Save(_config);
+    }
+
+    internal static string ResolveAppVersionDisplay()
+    {
+        Assembly asm = typeof(MainViewModel).Assembly;
+        string? infoVer = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(infoVer))
+        {
+            int plusIdx = infoVer.IndexOf('+');
+            string core = (plusIdx >= 0 ? infoVer[..plusIdx] : infoVer).Trim();
+            if (!string.IsNullOrEmpty(core))
+            {
+                return core.StartsWith('v') ? core : $"v{core}";
+            }
+        }
+
+        Version? ver = asm.GetName().Version;
+        if (ver is not null)
+        {
+            return $"v{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}";
+        }
+
+        return "v1.0.0";
     }
 
     public void Dispose()

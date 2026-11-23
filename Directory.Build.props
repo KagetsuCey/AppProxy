@@ -3,6 +3,10 @@
     <AppProxyRoot>$(MSBuildThisFileDirectory)</AppProxyRoot>
     <AppProxyArtifactsDir>$(AppProxyRoot)artifacts\</AppProxyArtifactsDir>
     <AppProxyVersion Condition="'$(AppProxyVersion)' == ''">1.0.0</AppProxyVersion>
+    <AppProxyVersionMajor>$([System.Version]::Parse('$(AppProxyVersion)').Major)</AppProxyVersionMajor>
+    <AppProxyVersionMinor>$([System.Version]::Parse('$(AppProxyVersion)').Minor)</AppProxyVersionMinor>
+    <AppProxyVersionPatch Condition="$([System.Version]::Parse('$(AppProxyVersion)').Build) &gt;= 0">$([System.Version]::Parse('$(AppProxyVersion)').Build)</AppProxyVersionPatch>
+    <AppProxyVersionPatch Condition="'$(AppProxyVersionPatch)' == ''">0</AppProxyVersionPatch>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">

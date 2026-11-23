@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using AppProxy.Core.Models;
 using AppProxy.Core.Services;
 using AppProxy.UI.Services;
+using AppProxy.UI.ViewModels;
 using Xunit;
 
 namespace AppProxy.Tests;
@@ -69,5 +71,34 @@ public class PeInspectorTests
             Assert.True(runtimeOptions.TryGetProperty("framework", out JsonElement framework));
             Assert.Equal("Microsoft.NETCore.App", framework.GetProperty("name").GetString());
         }
+    }
+
+    [Fact]
+    public void NativeBinariesIfBuilt_HaveVersionMetadata()
+    {
+        string repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        (string Path, string ExpectedOriginalFilename)[] targets =
+        [
+            (Path.Combine(repoRoot, "artifacts", "bin", "x64", "Release", "AppProxy.Hook.x64.dll"), "AppProxy.Hook.x64.dll"),
+            (Path.Combine(repoRoot, "artifacts", "bin", "Win32", "Release", "AppProxy.Hook.x86.dll"), "AppProxy.Hook.x86.dll"),
+            (Path.Combine(repoRoot, "artifacts", "bin", "x64", "Release", "AppProxy.Injector.x64.exe"), "AppProxy.Injector.x64.exe"),
+            (Path.Combine(repoRoot, "artifacts", "bin", "Win32", "Release", "AppProxy.Injector.x86.exe"), "AppProxy.Injector.x86.exe")
+        ];
+
+        foreach ((string path, string expectedOrig) in targets)
+        {
+            if (!File.Exists(path)) continue;
+            FileVersionInfo vi = FileVersionInfo.GetVersionInfo(path);
+            Assert.False(string.IsNullOrWhiteSpace(vi.FileVersion));
+            Assert.Equal("AppProxy", vi.ProductName);
+            Assert.Equal(expectedOrig, vi.OriginalFilename);
+        }
+    }
+
+    [Fact]
+    public void MainViewModel_ResolveAppVersionDisplay_ReturnsSemVerTag()
+    {
+        string display = MainViewModel.ResolveAppVersionDisplay();
+        Assert.Matches(@"^v\d+\.\d+\.\d+$", display);
     }
 }

@@ -1,4 +1,4 @@
-; Inno Setup 7 installer script for AppProxy (native 64-bit Setup engine)
+﻿; Inno Setup 7 installer script for AppProxy (native 64-bit Setup engine)
 ; Default installation targets current user (%LocalAppData%\Programs\AppProxy) without UAC so app-relative "data\" stays writable.
 ; Users can customize the install folder or switch to all-users installation via the setup mode dialog.
 
@@ -57,6 +57,12 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 #endif
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+english.UninstallDeleteDataConfirm=Do you also want to delete saved AppProxy user data (configuration, isolated browser profiles, and crash logs in "data")?
+#if FileExists(AddBackslash(CompilerPath) + "Languages\ChineseSimplified.isl")
+chinesesimplified.UninstallDeleteDataConfirm=是否同时删除已保存的 AppProxy 用户数据（包括 "data" 目录中的配置文件、隔离浏览器数据与崩溃日志）？
+#endif
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
@@ -106,7 +112,7 @@ begin
       if CmdLineParamExists('/PURGEDATA') or
          ((not UninstallSilent) and
           (MsgBox(
-            'Do you also want to delete saved AppProxy user data (configuration, isolated browser profiles, and crash logs in "data")?' + #13#10 + #13#10 + DataDir,
+            ExpandConstant('{cm:UninstallDeleteDataConfirm}') + #13#10 + #13#10 + DataDir,
             mbConfirmation,
             MB_YESNO or MB_DEFBUTTON2) = IDYES)) then
       begin
