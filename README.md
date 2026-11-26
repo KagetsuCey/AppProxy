@@ -32,7 +32,7 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
   - UI 监控面板采用有序 FIFO 队列在 UI 线程统一批量刷盘连接更新与桥接断开事件，避免高并发下的跨线程竞争。
 - **C# .NET 8 WPF Fluent UI**：
   - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`，自动解析 Squirrel/Electron `Update.exe` 目标）自动提取图标、启动参数、工作目录与 PE 架构识别；支持**最大运行实例数上限**配置、**Chromium 系浏览器隔离 Profile**（自动追加 `--user-data-dir`）与**一键生成桌面快捷方式**（免打开 UI 双击直启代理）。
-  - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）、实时握手延迟测速、**多格式批量导入 / 预览导出**（支持 `socks5://`、`http(s)://`、`host:port:user:pass`、`user:pass@host:port`、IPv6 与 JSON，带导入预览与去重；导出弹窗 `ProxyBatchExportDialog` 支持 URI 列表与 JSON 格式预览、按需仅导出当前筛选结果、一键复制到剪贴板及保存为 `.txt`/`.json` 文件）、**节点落地出口 IP / 国家地区与运营商检测**（经代理隧道直连并绕过全局 TUN，结果持久化展示，点击出口徽章可就地显示已复制确认并写入剪贴板，剪贴板写入内置 WPF 重试与 Win32 原生回退机制），以及直接在节点卡片右侧**一键克隆已有节点**（自动生成新 `Guid`、智能 `(副本)` 去重命名、预填参数编辑并插入源节点下方）。
+  - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）、实时握手延迟测速、**多格式批量导入 / 预览导出**（支持 `socks5://`、`http(s)://`、`host:port:user:pass`、`user:pass@host:port`、IPv6 与 JSON，带导入预览与去重；导出弹窗 `ProxyBatchExportDialog` 支持 URI 列表与 JSON 格式预览、按需仅导出当前筛选结果、一键复制到剪贴板及保存为 `.txt`/`.json` 文件）、**节点落地出口 IP / 国家地区与运营商检测**（经代理隧道直连并绕过全局 TUN，结果持久化展示，点击出口徽章可就地显示已复制确认并写入剪贴板，剪贴板写入优先采用 Win32 原生 API（避免 WPF OLE 剪贴板锁冲突导致的界面卡顿）并保留 WPF 回退），以及直接在节点卡片右侧**一键克隆已有节点**（自动生成新 `Guid`、智能 `(副本)` 去重命名、预填参数编辑并插入源节点下方）。
   - 实时监控：通过命名管道聚合所有活跃后台桥接的连接目标、Fake-IP、代理状态、握手延迟、实时上传/下载字节统计及进程注入/DNS 事件日志。
   - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、启动互斥锁（`data\locks\`）与崩溃日志（`data\logs\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移。
 

@@ -5,8 +5,8 @@ using System.Windows;
 namespace AppProxy.UI.Services;
 
 /// <summary>
-/// Resilient WPF clipboard helper that retries transient OleFlushClipboard / OpenClipboard locks
-/// and falls back to native Win32 SetClipboardData(CF_UNICODETEXT) when WPF OLE clipboard fails.
+/// Fast, non-blocking clipboard helper that writes CF_UNICODETEXT directly via Win32 first
+/// (avoiding WPF's 1000ms-per-call OleFlushClipboard stall), with a non-flushing WPF fallback.
 /// </summary>
 internal static class ClipboardHelper
 {
@@ -44,27 +44,6 @@ internal static class ClipboardHelper
     public static bool TrySetText(string text, out string? errorMessage)
     {
         text ??= string.Empty;
-        Exception? lastException = null;
-
-        for (int attempt = 0; attempt < 3; attempt++)
-        {
-            try
-            {
-                Clipboard.SetText(text, TextDataFormat.UnicodeText);
-                errorMessage = null;
-                return true;
-            }
-            catch (ExternalException ex)
-            {
-                lastException = ex;
-                Thread.Sleep(20);
-            }
-            catch (Exception ex)
-            {
-                lastException = ex;
-                break;
-            }
-        }
 
         if (TrySetTextWin32(text, out string? win32Error))
         {
@@ -72,17 +51,27 @@ internal static class ClipboardHelper
             return true;
         }
 
-        errorMessage = !string.IsNullOrWhiteSpace(win32Error)
-            ? win32Error
-            : (lastException?.Message ?? "无法访问系统剪贴板");
-        return false;
+        try
+        {
+            // Fallback with copy: false so WPF never triggers OleFlushClipboard's 10x100ms stall on the UI thread.
+            Clipboard.SetDataObject(text, copy: false);
+            errorMessage = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = !string.IsNullOrWhiteSpace(win32Error)
+                ? win32Error
+                : (ex.Message ?? "无法访问系统剪贴板");
+            return false;
+        }
     }
 
     private static bool TrySetTextWin32(string text, out string? errorMessage)
     {
         bool opened = false;
         int lastOpenError = 0;
-        for (int attempt = 0; attempt < 8; attempt++)
+        for (int attempt = 0; attempt < 5; attempt++)
         {
             if (OpenClipboard(IntPtr.Zero))
             {
@@ -90,7 +79,7 @@ internal static class ClipboardHelper
                 break;
             }
             lastOpenError = Marshal.GetLastWin32Error();
-            Thread.Sleep(20);
+            Thread.Sleep(10);
         }
 
         if (!opened)
