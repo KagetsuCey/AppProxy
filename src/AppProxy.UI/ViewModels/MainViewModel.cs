@@ -146,6 +146,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         RefreshOutboundInterfacesCore();
         PhysicalNetworkSelector.NetworkChanged += OnPhysicalNetworkChanged;
         _ = RefreshXrayCoreStatusAsync();
+        _ = Task.Run(() => ProcessInstanceCounter.CleanupLegacyLockFiles());
 
         foreach (var proxy in _config.Proxies)
         {

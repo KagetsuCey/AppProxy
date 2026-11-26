@@ -37,7 +37,7 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
     - 未配置 `xray.exe` 时保持轻量并仅开放原生 `SOCKS5 / HTTP / HTTPS`；在「系统设置 → Xray-core 托管内核」中可手动浏览指定本地 `xray.exe`，或一键从 GitHub `XTLS/Xray-core` 最新 Release 自动下载解压至 `data\cores\xray.exe` 并校验版本。
     - 运行时通过 `xray.exe run -c stdin:` 内存管道传递配置（不落盘明文节点文件），并绑定 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Windows Job Object；出站流量通过 `dialerProxy` 链入本地 `PhysicalDirectSocksProxy`（底层走 `OutboundSocketConnector`），自动继承全局 TUN 绕过、DoH over IP:443 与物理网卡故障转移；批量测速与批量出口检测自动复用单个多入站 Sidecar 实例。
   - 实时监控：通过命名管道聚合所有活跃后台桥接的连接目标、Fake-IP、代理状态、握手延迟、实时上传/下载字节统计及进程注入/DNS 事件日志。
-  - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、启动互斥锁（`data\locks\`）、崩溃日志（`data\logs\`）及可选托管内核（`data\cores\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移。
+  - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、崩溃日志（`data\logs\`）及可选托管内核（`data\cores\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移；多实例启动串行化采用 Windows 内核命名 `Mutex`，不在磁盘产生 `.lock` 残留文件。
 
 ## 目录结构
 
@@ -173,7 +173,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
    - `AppProxy.UI` 默认使用 `--launch-stdin` 匿名管道隐藏代理凭据，同时必须保留 `--launch-app-id <Guid>`（桌面快捷方式）与 `--launch-b64`（测试/脚本兼容）。
    - 运行 `scripts\package.ps1` 会先清空 `artifacts\package\AppProxy\`；若日常曾直接在该目录运行并生成了 `data\config.json`，打包前请先备份其中的 `data\` 目录。
 6. **回归测试基线**：
-   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **73 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、全局 TUN 绕过与多网卡故障转移、代理批量导入/导出与落地 IP 检测、托管 Xray-core / VLESS REALITY 解析与物理直连拨号（`XrayCoreTests`）、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
+   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **75 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、全局 TUN 绕过与多网卡故障转移、代理批量导入/导出与落地 IP 检测、托管 Xray-core / VLESS REALITY 解析与物理直连拨号（`XrayCoreTests`）、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
 
 ## 已知限制
 

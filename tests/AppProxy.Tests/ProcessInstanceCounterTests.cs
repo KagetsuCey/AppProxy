@@ -621,4 +621,84 @@ public class ProcessInstanceCounterTests
             p.Dispose();
         }
     }
+
+    [Fact]
+    public async Task AcquireLaunchLockAsync_SerializesAcrossAwaitAndCreatesNoLockFiles()
+    {
+        string tempBase = Path.Combine(Path.GetTempPath(), "AppProxyLockMutexTests_" + Guid.NewGuid().ToString("N"));
+        string fakeExe = Path.Combine(tempBase, "app", "sample.exe");
+        string lockDir = Path.Combine(tempBase, "data", "locks");
+
+        try
+        {
+            IDisposable? firstLock = await ProcessInstanceCounter.AcquireLaunchLockAsync(
+                fakeExe,
+                customBaseDir: tempBase,
+                timeout: TimeSpan.FromSeconds(2));
+            Assert.NotNull(firstLock);
+
+            // Force async continuation onto a thread-pool thread to verify cross-thread Mutex ownership safety.
+            await Task.Delay(30);
+
+            IDisposable? blockedLock = await ProcessInstanceCounter.AcquireLaunchLockAsync(
+                fakeExe,
+                customBaseDir: tempBase,
+                timeout: TimeSpan.FromMilliseconds(150));
+            Assert.Null(blockedLock);
+
+            firstLock!.Dispose();
+
+            IDisposable? secondLock = await ProcessInstanceCounter.AcquireLaunchLockAsync(
+                fakeExe,
+                customBaseDir: tempBase,
+                timeout: TimeSpan.FromSeconds(2));
+            Assert.NotNull(secondLock);
+            secondLock!.Dispose();
+
+            Assert.False(Directory.Exists(lockDir));
+        }
+        finally
+        {
+            if (Directory.Exists(tempBase))
+            {
+                Directory.Delete(tempBase, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void CleanupLegacyLockFiles_RemovesStaleLockFilesAndEmptyDir_PreservesOtherFiles()
+    {
+        string tempBase = Path.Combine(Path.GetTempPath(), "AppProxyLegacyLockCleanup_" + Guid.NewGuid().ToString("N"));
+        string lockDir = Path.Combine(tempBase, "data", "locks");
+
+        try
+        {
+            Directory.CreateDirectory(lockDir);
+            File.WriteAllText(Path.Combine(lockDir, "launch_1111222233334444.lock"), string.Empty);
+            File.WriteAllText(Path.Combine(lockDir, "launch_AAAABBBBCCCCDDDD.lock"), string.Empty);
+
+            int removed = ProcessInstanceCounter.CleanupLegacyLockFiles(tempBase);
+            Assert.Equal(2, removed);
+            Assert.False(Directory.Exists(lockDir));
+
+            // If an unrelated file exists in data\locks\, only launch_*.lock is removed and the directory stays intact.
+            Directory.CreateDirectory(lockDir);
+            string keepFile = Path.Combine(lockDir, "custom.txt");
+            File.WriteAllText(Path.Combine(lockDir, "launch_9999000011112222.lock"), string.Empty);
+            File.WriteAllText(keepFile, "keep");
+
+            int removedWithKeep = ProcessInstanceCounter.CleanupLegacyLockFiles(tempBase);
+            Assert.Equal(1, removedWithKeep);
+            Assert.True(Directory.Exists(lockDir));
+            Assert.True(File.Exists(keepFile));
+        }
+        finally
+        {
+            if (Directory.Exists(tempBase))
+            {
+                Directory.Delete(tempBase, recursive: true);
+            }
+        }
+    }
 }

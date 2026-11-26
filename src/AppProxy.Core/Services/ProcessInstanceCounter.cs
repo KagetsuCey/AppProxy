@@ -102,50 +102,192 @@ public static class ProcessInstanceCounter
     public static int ClampMaxInstances(int configuredMaxInstances) =>
         configuredMaxInstances < 1 ? 1 : configuredMaxInstances;
 
-    public static async Task<IDisposable?> AcquireLaunchLockAsync(
+    private static int _legacyCleanupStarted;
+
+    private sealed class NamedMutexLockHandle : IDisposable
+    {
+        private readonly ManualResetEventSlim _releaseSignal;
+        private readonly ManualResetEventSlim _releasedDone;
+        private int _disposed;
+
+        public NamedMutexLockHandle(ManualResetEventSlim releaseSignal, ManualResetEventSlim releasedDone)
+        {
+            _releaseSignal = releaseSignal;
+            _releasedDone = releasedDone;
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+            _releaseSignal.Set();
+            if (_releasedDone.Wait(TimeSpan.FromSeconds(2)))
+            {
+                _releaseSignal.Dispose();
+                _releasedDone.Dispose();
+            }
+        }
+    }
+
+    internal static string BuildLaunchMutexName(string exePath, string? customBaseDir = null)
+    {
+        string targetKey = (TryGetFinalFilePath(NormalizePath(exePath)) ?? NormalizePath(exePath)).ToUpperInvariant();
+        string scopeKey = AppPaths.GetDataDirectory(customBaseDir).ToUpperInvariant() + "|" + targetKey;
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(scopeKey));
+        return $"Local\\AppProxy_Launch_{Convert.ToHexString(hash)[..24]}";
+    }
+
+    public static Task<IDisposable?> AcquireLaunchLockAsync(
         string exePath,
         string? customBaseDir = null,
         TimeSpan? timeout = null,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(exePath)) return null;
-
-        string targetKey = (TryGetFinalFilePath(NormalizePath(exePath)) ?? NormalizePath(exePath)).ToUpperInvariant();
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(targetKey));
-        string lockFileName = $"launch_{Convert.ToHexString(hash)[..16]}.lock";
-        string lockDir = Path.Combine(AppPaths.GetDataDirectory(customBaseDir), "locks");
-        string lockPath = Path.Combine(lockDir, lockFileName);
-
-        try
+        if (string.IsNullOrWhiteSpace(exePath))
         {
-            Directory.CreateDirectory(lockDir);
-        }
-        catch
-        {
-            return null;
+            return Task.FromResult<IDisposable?>(null);
         }
 
-        DateTime deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (true)
+        if (ct.IsCancellationRequested)
         {
-            ct.ThrowIfCancellationRequested();
+            return Task.FromCanceled<IDisposable?>(ct);
+        }
+
+        if (customBaseDir is null && Interlocked.Exchange(ref _legacyCleanupStarted, 1) == 0)
+        {
+            _ = Task.Run(() => CleanupLegacyLockFiles());
+        }
+
+        string mutexName = BuildLaunchMutexName(exePath, customBaseDir);
+        int timeoutMs = Math.Max(0, (int)(timeout ?? TimeSpan.FromSeconds(5)).TotalMilliseconds);
+        var acquiredTcs = new TaskCompletionSource<IDisposable?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Dedicate a thread to own the OS Mutex so WaitOne and ReleaseMutex always execute
+        // on the same thread even when callers await across thread-pool continuations.
+        var ownerThread = new Thread(() =>
+        {
+            var releaseSignal = new ManualResetEventSlim(false);
+            var releasedDone = new ManualResetEventSlim(false);
+            bool acquired = false;
+
             try
             {
-                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            }
-            catch (IOException)
-            {
-                if (DateTime.UtcNow >= deadline)
+                using var mutex = new Mutex(initiallyOwned: false, name: mutexName);
+                try
                 {
-                    return null;
+                    if (ct.CanBeCanceled)
+                    {
+                        int idx = WaitHandle.WaitAny([mutex, ct.WaitHandle], timeoutMs);
+                        acquired = idx == 0;
+                        if (idx == 1)
+                        {
+                            acquiredTcs.TrySetCanceled(ct);
+                            releaseSignal.Dispose();
+                            releasedDone.Dispose();
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        acquired = mutex.WaitOne(timeoutMs);
+                    }
                 }
-                await Task.Delay(25, ct);
+                catch (AbandonedMutexException)
+                {
+                    // Previous holder exited/crashed without releasing; OS transferred ownership to us.
+                    acquired = true;
+                }
+
+                if (!acquired)
+                {
+                    acquiredTcs.TrySetResult(null);
+                    releaseSignal.Dispose();
+                    releasedDone.Dispose();
+                    return;
+                }
+
+                var handle = new NamedMutexLockHandle(releaseSignal, releasedDone);
+                acquiredTcs.TrySetResult(handle);
+
+                releaseSignal.Wait();
+                try
+                {
+                    mutex.ReleaseMutex();
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    releasedDone.Set();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                acquiredTcs.TrySetCanceled(ct);
+                releaseSignal.Dispose();
+                releasedDone.Dispose();
             }
             catch
             {
-                return null;
+                if (!acquired)
+                {
+                    acquiredTcs.TrySetResult(null);
+                    releaseSignal.Dispose();
+                    releasedDone.Dispose();
+                }
+                else
+                {
+                    releasedDone.Set();
+                }
+            }
+        })
+        {
+            Name = "AppProxy.LaunchMutex",
+            IsBackground = true
+        };
+
+        ownerThread.Start();
+        return acquiredTcs.Task;
+    }
+
+    /// <summary>
+    /// Cleans up legacy 0-byte launch_*.lock files from data\locks\ left by earlier versions
+    /// and removes the locks directory if empty.
+    /// </summary>
+    public static int CleanupLegacyLockFiles(string? customBaseDir = null)
+    {
+        string lockDir = Path.Combine(AppPaths.GetDataDirectory(customBaseDir), "locks");
+        if (!Directory.Exists(lockDir))
+        {
+            return 0;
+        }
+
+        int deleted = 0;
+        try
+        {
+            foreach (string file in Directory.EnumerateFiles(lockDir, "launch_*.lock", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    File.Delete(file);
+                    deleted++;
+                }
+                catch
+                {
+                }
+            }
+
+            if (!Directory.EnumerateFileSystemEntries(lockDir).Any())
+            {
+                Directory.Delete(lockDir, recursive: false);
             }
         }
+        catch
+        {
+        }
+
+        return deleted;
     }
 
     public static InstanceLimitCheckResult CheckCanLaunch(
