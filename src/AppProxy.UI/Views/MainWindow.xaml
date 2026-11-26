@@ -746,7 +746,8 @@
                                 <ui:Button Content="导出 URI"
                                            Icon="{ui:SymbolIcon ArrowUpload24}"
                                            Appearance="Secondary"
-                                           Command="{Binding ExportProxiesToClipboardCommand}" />
+                                           ToolTip="预览、复制或导出代理节点 URI / JSON"
+                                           Click="OnExportProxiesClick" />
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -940,24 +941,39 @@
                                                             Margin="0,0,6,2"
                                                             BorderThickness="0"
                                                             Background="Transparent"
-                                                            Cursor="Hand"
                                                             VerticalAlignment="Center"
                                                             ToolTip="{Binding ExitTooltipText}"
-                                                            Command="{Binding DataContext.CopyProxyExitIpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}">
+                                                            Click="OnCopyProxyExitIpClick">
                                                         <Button.Style>
                                                             <Style TargetType="Button">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Setter Property="Cursor" Value="Arrow" />
                                                                 <Setter Property="Template">
                                                                     <Setter.Value>
                                                                         <ControlTemplate TargetType="Button">
-                                                                            <ContentPresenter />
+                                                                            <Border x:Name="PillHost" Background="Transparent">
+                                                                                <ContentPresenter />
+                                                                            </Border>
+                                                                            <ControlTemplate.Triggers>
+                                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                                    <Setter TargetName="PillHost" Property="Opacity" Value="0.86" />
+                                                                                </Trigger>
+                                                                                <Trigger Property="IsPressed" Value="True">
+                                                                                    <Setter TargetName="PillHost" Property="Opacity" Value="0.7" />
+                                                                                </Trigger>
+                                                                            </ControlTemplate.Triggers>
                                                                         </ControlTemplate>
                                                                     </Setter.Value>
                                                                 </Setter>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding HasExitInfo}" Value="True">
                                                                         <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding ExitBadgeState}" Value="Ok">
+                                                                        <Setter Property="Cursor" Value="Hand" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding ExitBadgeState}" Value="Copied">
+                                                                        <Setter Property="Cursor" Value="Hand" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -968,6 +984,10 @@
                                                                     <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
                                                                     <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
                                                                     <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding ExitBadgeState}" Value="Copied">
+                                                                            <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
+                                                                        </DataTrigger>
                                                                         <DataTrigger Binding="{Binding ExitBadgeState}" Value="Detecting">
                                                                             <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
                                                                             <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
@@ -979,21 +999,42 @@
                                                                     </Style.Triggers>
                                                                 </Style>
                                                             </Border.Style>
-                                                            <TextBlock Text="{Binding ExitBadgeText}" FontSize="11" FontWeight="Medium">
-                                                                <TextBlock.Style>
-                                                                    <Style TargetType="TextBlock">
-                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding ExitBadgeState}" Value="Detecting">
-                                                                                <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
-                                                                            </DataTrigger>
-                                                                            <DataTrigger Binding="{Binding ExitBadgeState}" Value="Error">
-                                                                                <Setter Property="Foreground" Value="{DynamicResource SemanticErrorBrush}" />
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </TextBlock.Style>
-                                                            </TextBlock>
+                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding ExitBadgeText}" FontSize="11" FontWeight="Medium">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding ExitBadgeState}" Value="Copied">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding ExitBadgeState}" Value="Detecting">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding ExitBadgeState}" Value="Error">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource SemanticErrorBrush}" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                                <ui:SymbolIcon Symbol="Copy24"
+                                                                               FontSize="11"
+                                                                               Margin="5,0,0,0"
+                                                                               VerticalAlignment="Center"
+                                                                               Foreground="{DynamicResource SemanticTealBrush}">
+                                                                    <ui:SymbolIcon.Style>
+                                                                        <Style TargetType="ui:SymbolIcon">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding ExitBadgeState}" Value="Ok">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </ui:SymbolIcon.Style>
+                                                                </ui:SymbolIcon>
+                                                            </StackPanel>
                                                         </Border>
                                                     </Button>
                                                 </WrapPanel>

@@ -24,6 +24,20 @@ public static class ProxyBatchParser
         Converters = { new JsonStringEnumConverter() }
     };
 
+    private static readonly JsonSerializerOptions IndentedJsonOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private sealed record ExportProxyDto(
+        string Name,
+        ProxyProtocol Protocol,
+        string Host,
+        int Port,
+        string Username,
+        string Password);
+
     public static ProxyBatchParseResult Parse(string? input, ProxyProtocol defaultProtocol = ProxyProtocol.Socks5)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -113,6 +127,21 @@ public static class ProxyBatchParser
         }
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    public static string ExportToJson(IEnumerable<ProxyProfile> proxies)
+    {
+        ArgumentNullException.ThrowIfNull(proxies);
+        var items = proxies
+            .Select(p => new ExportProxyDto(
+                p.Name ?? string.Empty,
+                p.Protocol,
+                (p.Host ?? string.Empty).Trim(),
+                p.Port,
+                p.Username ?? string.Empty,
+                p.Password ?? string.Empty))
+            .ToList();
+        return JsonSerializer.Serialize(items, IndentedJsonOptions);
     }
 
     private static bool TryParseJson(string json, out ProxyBatchParseResult? result)

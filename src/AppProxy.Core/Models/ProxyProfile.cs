@@ -96,6 +96,12 @@ public partial class ProxyProfile : ObservableObject
     [NotifyPropertyChangedFor(nameof(ExitBadgeState))]
     private string _exitDetectError = string.Empty;
 
+    [ObservableProperty]
+    [property: JsonIgnore]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeText))]
+    [NotifyPropertyChangedFor(nameof(ExitBadgeState))]
+    private bool _isExitIpCopied;
+
     [JsonIgnore]
     public string ProtocolDisplay => Protocol switch
     {
@@ -153,6 +159,7 @@ public partial class ProxyProfile : ObservableObject
         get
         {
             if (IsDetectingExitIp) return "Detecting";
+            if (IsExitIpCopied && !string.IsNullOrWhiteSpace(ExitIp)) return "Copied";
             if (!string.IsNullOrWhiteSpace(ExitIp) || !string.IsNullOrWhiteSpace(ExitLocation)) return "Ok";
             if (!string.IsNullOrWhiteSpace(ExitDetectError)) return "Error";
             return "None";
@@ -165,6 +172,7 @@ public partial class ProxyProfile : ObservableObject
         get
         {
             if (IsDetectingExitIp) return "检测出口中...";
+            if (IsExitIpCopied && !string.IsNullOrWhiteSpace(ExitIp)) return $"✓ 已复制 {ExitIp.Trim()}";
             if (!string.IsNullOrWhiteSpace(ExitIp) || !string.IsNullOrWhiteSpace(ExitLocation))
             {
                 var parts = new List<string>(3);
@@ -270,7 +278,8 @@ public partial class ProxyProfile : ObservableObject
         LastTestStatus = "Untested",
         IsTesting = false,
         IsDetectingExitIp = false,
-        ExitDetectError = string.Empty
+        ExitDetectError = string.Empty,
+        IsExitIpCopied = false
     };
 
     public ProxyProfile Clone() => new()

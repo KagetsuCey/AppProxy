@@ -33,6 +33,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConcurrentQueue<ConnectionQueueItem> _pendingConnectionOps = new();
     private readonly ConcurrentQueue<ProcessEventRecord> _pendingEvents = new();
     private readonly Dictionary<(uint BridgePid, long Id), ConnectionRecord> _connectionIndex = new();
+    private readonly Dictionary<Guid, int> _exitIpCopyVersions = new();
     private int _bridgeSummaryDirty;
     private AppConfig _config;
     private bool _isInitializing = true;
@@ -573,30 +574,68 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        try
+        string uriText = ProxyBatchParser.ExportToUriLines(Proxies);
+        if (ClipboardHelper.TrySetText(uriText, out string? error))
         {
-            string uriText = ProxyBatchParser.ExportToUriLines(Proxies);
-            Clipboard.SetText(uriText);
             StatusMessage = $"已导出 {Proxies.Count} 个代理节点 URI 到剪贴板";
         }
-        catch (Exception ex)
+        else
         {
-            StatusMessage = $"导出代理节点失败: {ex.Message}";
+            StatusMessage = $"导出代理节点失败: {error}";
         }
     }
 
     [RelayCommand]
-    private void CopyProxyExitIp(ProxyProfile? proxy)
+    public void CopyProxyExitIp(ProxyProfile? proxy)
     {
         if (proxy is null || string.IsNullOrWhiteSpace(proxy.ExitIp)) return;
-        try
+        string ip = proxy.ExitIp.Trim();
+        if (ClipboardHelper.TrySetText(ip, out string? error))
         {
-            Clipboard.SetText(proxy.ExitIp);
-            StatusMessage = $"已复制出口 IP: {proxy.ExitIp}";
+            StatusMessage = $"已复制出口 IP: {ip}";
+            TriggerExitIpCopiedFeedback(proxy);
         }
-        catch
+        else
         {
-            StatusMessage = "复制出口 IP 失败";
+            string msg = $"复制出口 IP 失败: {error}";
+            StatusMessage = msg;
+            System.Windows.MessageBox.Show(
+                $"未能写入系统剪贴板（{error}）。\n\n出口 IP：{ip}",
+                "复制出口 IP",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private void TriggerExitIpCopiedFeedback(ProxyProfile proxy)
+    {
+        int nextVersion = _exitIpCopyVersions.TryGetValue(proxy.Id, out int current)
+            ? current + 1
+            : 1;
+        _exitIpCopyVersions[proxy.Id] = nextVersion;
+        proxy.IsExitIpCopied = true;
+        _ = ResetExitIpCopiedAfterDelayAsync(proxy, nextVersion);
+    }
+
+    private async Task ResetExitIpCopiedAfterDelayAsync(ProxyProfile proxy, int version)
+    {
+        await Task.Delay(1800);
+        void ResetIfCurrent()
+        {
+            if (_exitIpCopyVersions.TryGetValue(proxy.Id, out int current) && current == version)
+            {
+                proxy.IsExitIpCopied = false;
+            }
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            await dispatcher.InvokeAsync(ResetIfCurrent);
+        }
+        else
+        {
+            ResetIfCurrent();
         }
     }
 
@@ -724,12 +763,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void CopyConfigFilePath()
     {
-        try
+        if (ClipboardHelper.TrySetText(ConfigFilePath, out _))
         {
-            Clipboard.SetText(ConfigFilePath);
             StatusMessage = "已复制配置文件路径到剪贴板";
         }
-        catch
+        else
         {
             StatusMessage = "复制配置文件路径失败";
         }

@@ -65,6 +65,32 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void OnExportProxiesClick(object sender, RoutedEventArgs e)
+    {
+        if (App.ViewModel.Proxies.Count == 0)
+        {
+            App.ViewModel.StatusMessage = "暂无可导出的代理节点";
+            System.Windows.MessageBox.Show(
+                this,
+                "当前暂无可导出的代理节点，请先添加或批量导入代理节点。",
+                "导出代理节点",
+                System.Windows.MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var allProxies = App.ViewModel.Proxies.ToList();
+        var filteredProxies = App.ViewModel.FilteredProxies.Cast<ProxyProfile>().ToList();
+        bool isFiltered = !string.IsNullOrWhiteSpace(App.ViewModel.ProxySearchText);
+
+        var dlg = new ProxyBatchExportDialog(allProxies, filteredProxies, isFiltered) { Owner = this };
+        dlg.ShowDialog();
+        if (!string.IsNullOrWhiteSpace(dlg.LastStatusMessage))
+        {
+            App.ViewModel.StatusMessage = dlg.LastStatusMessage;
+        }
+    }
+
     private void OnCloneProxyClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;
@@ -75,6 +101,12 @@ public partial class MainWindow : FluentWindow
         {
             App.ViewModel.AddOrUpdateProxy(dlg.ResultProxy, insertAfterIndex: sourceIndex >= 0 ? sourceIndex : null);
         }
+    }
+
+    private void OnCopyProxyExitIpClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;
+        App.ViewModel.CopyProxyExitIp(proxy);
     }
 
     private void OnEditProxyClick(object sender, RoutedEventArgs e)

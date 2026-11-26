@@ -152,6 +152,39 @@ public class ProxyBatchAndExitIpTests
     }
 
     [Fact]
+    public void ExportToJson_RoundTripsCleanlyThroughParser()
+    {
+        Assert.Equal("[]", ProxyBatchParser.ExportToJson([]));
+
+        var list = new List<ProxyProfile>
+        {
+            new() { Name = "Node A", Protocol = ProxyProtocol.Socks5, Host = "1.2.3.4", Port = 1080, Username = "u", Password = "p@#:" },
+            new() { Name = "Node B", Protocol = ProxyProtocol.Http, Host = "example.com", Port = 8080 },
+            new() { Name = "Node V6", Protocol = ProxyProtocol.Https, Host = "2001:db8::9", Port = 443 }
+        };
+
+        string json = ProxyBatchParser.ExportToJson(list);
+        using (JsonDocument doc = JsonDocument.Parse(json))
+        {
+            Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
+            Assert.Equal(3, doc.RootElement.GetArrayLength());
+        }
+
+        ProxyBatchParseResult reparsed = ProxyBatchParser.Parse(json);
+        Assert.Empty(reparsed.Errors);
+        Assert.Equal(3, reparsed.Proxies.Count);
+        for (int i = 0; i < list.Count; i++)
+        {
+            Assert.Equal(list[i].Protocol, reparsed.Proxies[i].Protocol);
+            Assert.Equal(list[i].Host, reparsed.Proxies[i].Host);
+            Assert.Equal(list[i].Port, reparsed.Proxies[i].Port);
+            Assert.Equal(list[i].Username, reparsed.Proxies[i].Username);
+            Assert.Equal(list[i].Password, reparsed.Proxies[i].Password);
+            Assert.Equal(list[i].Name, reparsed.Proxies[i].Name);
+        }
+    }
+
+    [Fact]
     public void ParseGeoJson_HandlesIpApi_IpWhoIs_And_IpInfo()
     {
         ProxyExitIpInfo? ipApi = ProxyExitIpDetector.ParseGeoJson("ip-api", """
@@ -296,6 +329,62 @@ public class ProxyBatchAndExitIpTests
             Assert.Equal(string.Empty, dup.ExitLocation);
             Assert.Equal(string.Empty, dup.ExitIsp);
             Assert.False(dup.HasExitInfo);
+            Assert.False(dup.IsExitIpCopied);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ProxyProfile_ExitIpCopiedState_TransitionsCleanlyAndIsNotPersisted()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "AppProxyCopyStateTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string cfgPath = Path.Combine(tempDir, "config.json");
+
+        try
+        {
+            var proxy = new ProxyProfile
+            {
+                Name = "SG Node",
+                Protocol = ProxyProtocol.Socks5,
+                Host = "198.51.100.1",
+                Port = 1080,
+                ExitIp = "203.0.113.88",
+                ExitCountryCode = "SG",
+                ExitLocation = "新加坡"
+            };
+
+            Assert.Equal("Ok", proxy.ExitBadgeState);
+            Assert.Equal("SG · 新加坡 · 203.0.113.88", proxy.ExitBadgeText);
+
+            proxy.IsExitIpCopied = true;
+            Assert.Equal("Copied", proxy.ExitBadgeState);
+            Assert.Equal("✓ 已复制 203.0.113.88", proxy.ExitBadgeText);
+
+            proxy.IsDetectingExitIp = true;
+            Assert.Equal("Detecting", proxy.ExitBadgeState);
+            Assert.Equal("检测出口中...", proxy.ExitBadgeText);
+
+            proxy.IsDetectingExitIp = false;
+            proxy.IsExitIpCopied = false;
+            Assert.Equal("Ok", proxy.ExitBadgeState);
+            Assert.Equal("SG · 新加坡 · 203.0.113.88", proxy.ExitBadgeText);
+
+            proxy.IsExitIpCopied = true;
+            ProxyProfile dup = proxy.CreateDuplicate(["SG Node"]);
+            Assert.False(dup.IsExitIpCopied);
+
+            var svc = new ConfigService(cfgPath);
+            svc.Save(new AppConfig { Proxies = [proxy] });
+            AppConfig reloaded = svc.Load();
+            Assert.Single(reloaded.Proxies);
+            Assert.False(reloaded.Proxies[0].IsExitIpCopied);
         }
         finally
         {

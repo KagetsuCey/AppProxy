@@ -81,6 +81,7 @@ public static class ProxyExitIpDetector
         ArgumentNullException.ThrowIfNull(endpoints);
 
         proxy.IsDetectingExitIp = true;
+        proxy.IsExitIpCopied = false;
         proxy.ExitDetectError = string.Empty;
 
         string? lastFailure = null;

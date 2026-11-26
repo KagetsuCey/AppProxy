@@ -1,0 +1,158 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Windows;
+
+namespace AppProxy.UI.Services;
+
+/// <summary>
+/// Resilient WPF clipboard helper that retries transient OleFlushClipboard / OpenClipboard locks
+/// and falls back to native Win32 SetClipboardData(CF_UNICODETEXT) when WPF OLE clipboard fails.
+/// </summary>
+internal static class ClipboardHelper
+{
+    private const uint CF_UNICODETEXT = 13;
+    private const uint GMEM_MOVEABLE = 0x0002;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseClipboard();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GlobalUnlock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalFree(IntPtr hMem);
+
+    public static bool TrySetText(string text, out string? errorMessage)
+    {
+        text ??= string.Empty;
+        Exception? lastException = null;
+
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(text, TextDataFormat.UnicodeText);
+                errorMessage = null;
+                return true;
+            }
+            catch (ExternalException ex)
+            {
+                lastException = ex;
+                Thread.Sleep(20);
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                break;
+            }
+        }
+
+        if (TrySetTextWin32(text, out string? win32Error))
+        {
+            errorMessage = null;
+            return true;
+        }
+
+        errorMessage = !string.IsNullOrWhiteSpace(win32Error)
+            ? win32Error
+            : (lastException?.Message ?? "无法访问系统剪贴板");
+        return false;
+    }
+
+    private static bool TrySetTextWin32(string text, out string? errorMessage)
+    {
+        bool opened = false;
+        int lastOpenError = 0;
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            if (OpenClipboard(IntPtr.Zero))
+            {
+                opened = true;
+                break;
+            }
+            lastOpenError = Marshal.GetLastWin32Error();
+            Thread.Sleep(20);
+        }
+
+        if (!opened)
+        {
+            errorMessage = new Win32Exception(lastOpenError).Message;
+            return false;
+        }
+
+        try
+        {
+            if (!EmptyClipboard())
+            {
+                errorMessage = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                return false;
+            }
+
+            char[] chars = text.ToCharArray();
+            nuint bytes = (nuint)((chars.Length + 1) * sizeof(char));
+            IntPtr hGlobal = GlobalAlloc(GMEM_MOVEABLE, bytes);
+            if (hGlobal == IntPtr.Zero)
+            {
+                errorMessage = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+                return false;
+            }
+
+            IntPtr ptr = GlobalLock(hGlobal);
+            if (ptr == IntPtr.Zero)
+            {
+                int err = Marshal.GetLastWin32Error();
+                GlobalFree(hGlobal);
+                errorMessage = new Win32Exception(err).Message;
+                return false;
+            }
+
+            try
+            {
+                if (chars.Length > 0)
+                {
+                    Marshal.Copy(chars, 0, ptr, chars.Length);
+                }
+                Marshal.WriteInt16(ptr, chars.Length * sizeof(char), 0);
+            }
+            finally
+            {
+                GlobalUnlock(hGlobal);
+            }
+
+            if (SetClipboardData(CF_UNICODETEXT, hGlobal) == IntPtr.Zero)
+            {
+                int err = Marshal.GetLastWin32Error();
+                GlobalFree(hGlobal);
+                errorMessage = new Win32Exception(err).Message;
+                return false;
+            }
+
+            // Ownership of hGlobal transferred to Windows on SetClipboardData success.
+            errorMessage = null;
+            return true;
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
+}
