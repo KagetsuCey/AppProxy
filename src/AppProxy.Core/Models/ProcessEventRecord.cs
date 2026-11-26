@@ -24,4 +24,5 @@ public sealed class AppConfig
     public int TestProbePort { get; set; } = 80;
     public bool BypassGlobalTun { get; set; } = true;
     public string? PreferredOutboundInterface { get; set; }
+    public string? XrayCorePath { get; set; }
 }

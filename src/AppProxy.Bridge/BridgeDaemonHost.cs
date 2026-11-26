@@ -167,6 +167,7 @@ internal sealed class BridgeDaemonHost : IDisposable
     private string _appDisplayName = string.Empty;
     private string _lastOutboundLabel = string.Empty;
     private bool _effectiveBypassTun;
+    private XraySidecarSession? _xraySidecar;
     private bool _disposed;
 
     public BridgeDaemonHost(BridgeLaunchRequest request)
@@ -250,20 +251,80 @@ internal sealed class BridgeDaemonHost : IDisposable
         if (_request.IgnoreSystemProxy) flags |= NativeSessionFlags.IgnoreSystemProxy;
 
         _shm.RegisterSession(sessionId, flags);
-        _bridge.RegisterSession(new SessionContext
-        {
-            SessionId = sessionId,
-            AppName = Path.GetFileName(_request.ExePath),
-            Proxy = proxyProfile,
-            BypassLan = _request.BypassLan,
-            RemoteDns = _request.RemoteDns,
-            BypassGlobalTun = _effectiveBypassTun,
-            PreferredOutboundInterface = _request.PreferredOutboundInterface
-        });
 
         StartNativeLogPipeServer();
         StartUiTelemetryPipeServer();
         _ = TelemetryTickerLoopAsync(_telemetryCts.Token);
+
+        ProxyProfile? sessionTransportProxy = proxyProfile;
+        bool sessionBypassTun = _effectiveBypassTun;
+        string? protocolDisplayOverride = null;
+
+        if (proxyProfile is not null && proxyProfile.RequiresXrayCore)
+        {
+            string? xrayExe = XrayCoreManager.ResolveXrayPath(_request.XrayCorePath);
+            if (xrayExe is null)
+            {
+                sendHandshake(new BridgeHandshakeResponse
+                {
+                    Ok = false,
+                    BridgePid = _bridgePid,
+                    Error = "该应用绑定了 VLESS 节点，但尚未配置 Xray-core 内核。请先在「系统设置 → Xray-core 托管内核」中指定 xray.exe 路径或一键下载。"
+                });
+                return 1;
+            }
+
+            try
+            {
+                _xraySidecar = await XraySidecarSession.StartSingleAsync(
+                    xrayExe,
+                    proxyProfile,
+                    _effectiveBypassTun,
+                    _request.PreferredOutboundInterface,
+                    _cts.Token);
+            }
+            catch (Exception ex)
+            {
+                sendHandshake(new BridgeHandshakeResponse
+                {
+                    Ok = false,
+                    BridgePid = _bridgePid,
+                    Error = $"启动 Xray-core 托管内核失败: {ex.Message}"
+                });
+                return 1;
+            }
+
+            sessionTransportProxy = _xraySidecar.PrimaryLocalSocksProfile;
+            sessionBypassTun = false;
+            protocolDisplayOverride = proxyProfile.HasSecurityBadge
+                ? $"{proxyProfile.ProtocolDisplay} ({proxyProfile.SecurityBadgeText})"
+                : proxyProfile.ProtocolDisplay;
+
+            RecordAndBroadcastEvent(new ProcessEventRecord
+            {
+                Timestamp = DateTime.Now,
+                BridgePid = _bridgePid,
+                SessionId = sessionId,
+                Pid = (uint)_xraySidecar.ProcessId,
+                ParentPid = _bridgePid,
+                Arch = Environment.Is64BitOperatingSystem ? "x64" : "x86",
+                ProcessName = "xray.exe",
+                EventType = "XrayCore",
+                Message = $"Managed Xray-core started on 127.0.0.1:{sessionTransportProxy.Port} for {proxyProfile.Name} ({protocolDisplayOverride})"
+            });
+        }
+
+        _bridge.RegisterSession(new SessionContext
+        {
+            SessionId = sessionId,
+            AppName = Path.GetFileName(_request.ExePath),
+            Proxy = sessionTransportProxy,
+            BypassLan = _request.BypassLan,
+            RemoteDns = _request.RemoteDns,
+            BypassGlobalTun = sessionBypassTun,
+            PreferredOutboundInterface = _request.PreferredOutboundInterface,
+            ProtocolDisplayOverride = protocolDisplayOverride
+        });
 
         string effectiveArgs = _request.BuildEffectiveArguments(AppPaths.ResolveBaseDirectory());
         string exeB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(_request.ExePath));
@@ -980,6 +1041,7 @@ internal sealed class BridgeDaemonHost : IDisposable
         }
 
         _bridge.Dispose();
+        _xraySidecar?.Dispose();
         _shm.Dispose();
         _jobTracker.Dispose();
         _telemetryCts.Dispose();

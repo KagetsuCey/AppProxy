@@ -19,17 +19,24 @@ public partial class ProxyBatchImportDialog : FluentWindow
         Brush StatusBrush);
 
     private readonly HashSet<string> _existingKeys;
+    private readonly bool _xrayAvailable;
     private readonly List<ProxyProfile> _importable = new();
 
     public IReadOnlyList<ProxyProfile> ImportedProxies { get; private set; } = [];
     public bool SkipDuplicates { get; private set; } = true;
 
-    public ProxyBatchImportDialog(IEnumerable<ProxyProfile> existingProxies)
+    public ProxyBatchImportDialog(IEnumerable<ProxyProfile> existingProxies, bool xrayAvailable = false)
     {
+        _xrayAvailable = xrayAvailable;
         InitializeComponent();
         _existingKeys = new HashSet<string>(
             existingProxies.Select(ProxyBatchParser.BuildDedupeKey),
             StringComparer.Ordinal);
+
+        if (_xrayAvailable)
+        {
+            FormatHintTextBlock.Text = "vless://uuid@host:port?security=reality...#备注 · socks5://user:pass@host:port#备注 · http(s)://host:port · host:port:user:pass · AppProxy JSON";
+        }
     }
 
     private void OnPasteClipboardClick(object sender, RoutedEventArgs e)
@@ -99,7 +106,10 @@ public partial class ProxyBatchImportDialog : FluentWindow
         ProxyProtocol defaultProtocol = Enum.TryParse<ProxyProtocol>(tag, out var proto) ? proto : ProxyProtocol.Socks5;
         bool skipDuplicates = SkipDuplicatesCheckBox.IsChecked == true;
 
-        ProxyBatchParseResult parsed = ProxyBatchParser.Parse(InputTextBox.Text, defaultProtocol);
+        ProxyBatchParseResult parsed = ProxyBatchParser.Parse(
+            InputTextBox.Text,
+            defaultProtocol,
+            allowXrayProtocols: _xrayAvailable);
         _importable.Clear();
 
         var previewRows = new List<PreviewRow>(parsed.Proxies.Count);

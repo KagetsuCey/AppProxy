@@ -838,6 +838,10 @@
                                                                 <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
                                                                 <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
                                                             </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ProtocolDisplay}" Value="VLESS">
+                                                                <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
+                                                            </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </Border.Style>
@@ -852,6 +856,10 @@
                                                                 </DataTrigger>
                                                                 <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTPS">
                                                                     <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                    <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding ProtocolDisplay}" Value="VLESS">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
                                                                     <Setter Property="Symbol" Value="ShieldCheckmark24" />
                                                                 </DataTrigger>
                                                             </Style.Triggers>
@@ -885,6 +893,10 @@
                                                                         <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
                                                                         <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
                                                                     </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding ProtocolDisplay}" Value="VLESS">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
+                                                                    </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
@@ -899,10 +911,33 @@
                                                                         <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTPS">
                                                                             <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
                                                                         </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding ProtocolDisplay}" Value="VLESS">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
+                                                                        </DataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
                                                             </TextBlock.Style>
                                                         </TextBlock>
+                                                    </Border>
+
+                                                    <!-- Security Pill (REALITY / TLS for VLESS) -->
+                                                    <Border Margin="6,0,0,0"
+                                                            Background="{DynamicResource SemanticPurpleBgBrush}"
+                                                            BorderBrush="{DynamicResource SemanticPurpleBorderBrush}">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasSecurityBadge}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding SecurityBadgeText}"
+                                                                   FontSize="10.5"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource SemanticPurpleBrush}" />
                                                     </Border>
 
                                                     <!-- Auth Pill -->
@@ -1500,6 +1535,10 @@
                                                                         <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
                                                                         <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
                                                                     </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding EventType}" Value="XrayCore">
+                                                                        <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
+                                                                    </DataTrigger>
                                                                     <DataTrigger Binding="{Binding EventType}" Value="Warning">
                                                                         <Setter Property="Background" Value="{DynamicResource SemanticWarningBgBrush}" />
                                                                         <Setter Property="BorderBrush" Value="{DynamicResource SemanticWarningBorderBrush}" />
@@ -1542,6 +1581,9 @@
                                                                             <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
                                                                         </DataTrigger>
                                                                         <DataTrigger Binding="{Binding EventType}" Value="NetworkChanged">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding EventType}" Value="XrayCore">
                                                                             <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
                                                                         </DataTrigger>
                                                                         <DataTrigger Binding="{Binding EventType}" Value="Warning">
@@ -1738,6 +1780,167 @@
                                             Background="{DynamicResource InputSurfaceBgBrush}">
                                         <TextBlock Text="{Binding OutboundNetworkSummary}"
                                                    FontSize="11.5"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Xray-core Managed Sidecar Card -->
+                            <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0"
+                                                Width="38"
+                                                Height="38"
+                                                CornerRadius="9"
+                                                Margin="0,0,14,0"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource SemanticPurpleBorderBrush}"
+                                                Background="{DynamicResource SemanticPurpleBgBrush}">
+                                            <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="19" Foreground="{DynamicResource SemanticPurpleBrush}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="Xray-core 托管内核 (可选 · 支持 VLESS / REALITY)" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border Margin="8,0,0,0" VerticalAlignment="Center">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
+                                                            <Setter Property="Background" Value="{DynamicResource SemanticNeutralBgBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticNeutralBorderBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsXrayCoreAvailable}" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock FontSize="10.5" FontWeight="SemiBold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="未配置" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsXrayCoreAvailable}" Value="True">
+                                                                        <Setter Property="Text" Value="已就绪" />
+                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="未配置时仅开放原生 SOCKS5 / HTTP / HTTPS；配置或一键下载 xray.exe 后可解锁 VLESS + REALITY / TLS 节点并继承全局 TUN 绕过"
+                                                       FontSize="12"
+                                                       Margin="0,2,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Grid Margin="52,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="6" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBox Grid.Column="0"
+                                                    Text="{Binding XrayCorePath, UpdateSourceTrigger=LostFocus}"
+                                                    PlaceholderText="留空自动探测 data\cores\xray.exe，或点击右侧浏览指定路径" />
+                                        <ui:Button Grid.Column="2"
+                                                   Content="浏览..."
+                                                   Icon="{ui:SymbolIcon FolderOpen24}"
+                                                   Appearance="Secondary"
+                                                   Click="OnBrowseXrayCoreClick" />
+                                        <ui:Button Grid.Column="4"
+                                                   Content="清除"
+                                                   Appearance="Secondary"
+                                                   Command="{Binding ClearXrayCorePathCommand}" />
+                                    </Grid>
+
+                                    <WrapPanel Margin="52,10,0,0" Orientation="Horizontal">
+                                        <ui:Button Content="一键下载 Xray-core"
+                                                   Icon="{ui:SymbolIcon ArrowDownload24}"
+                                                   Appearance="Primary"
+                                                   Margin="0,0,8,4"
+                                                   Command="{Binding DownloadXrayCoreCommand}">
+                                            <ui:Button.Style>
+                                                <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsDownloadingXray}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:Button.Style>
+                                        </ui:Button>
+                                        <ui:Button Content="取消下载"
+                                                   Appearance="Secondary"
+                                                   Margin="0,0,8,4"
+                                                   Command="{Binding CancelDownloadXrayCoreCommand}">
+                                            <ui:Button.Style>
+                                                <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsDownloadingXray}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:Button.Style>
+                                        </ui:Button>
+                                        <ui:Button Content="检测状态"
+                                                   Icon="{ui:SymbolIcon ArrowSync24}"
+                                                   Appearance="Secondary"
+                                                   Margin="0,0,8,4"
+                                                   Command="{Binding RefreshXrayCoreStatusCommand}" />
+                                        <ui:Button Content="打开内核目录"
+                                                   Icon="{ui:SymbolIcon FolderOpen24}"
+                                                   Appearance="Secondary"
+                                                   Margin="0,0,0,4"
+                                                   Command="{Binding OpenXrayCoreDirectoryCommand}" />
+                                    </WrapPanel>
+
+                                    <StackPanel Margin="52,8,0,0">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsDownloadingXray}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <ProgressBar Height="6"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="{Binding XrayDownloadProgressPercent, Mode=OneWay}" />
+                                        <TextBlock Text="{Binding XrayDownloadStatusText}"
+                                                   FontSize="11.5"
+                                                   Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+
+                                    <Border Margin="52,10,0,0"
+                                            CornerRadius="7"
+                                            Padding="10,7"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource SubtleDividerBrush}"
+                                            Background="{DynamicResource InputSurfaceBgBrush}">
+                                        <TextBlock Text="{Binding XrayCoreStatusText}"
+                                                   FontSize="11.5"
+                                                   FontFamily="Consolas"
                                                    TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                     </Border>

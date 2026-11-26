@@ -18,6 +18,7 @@ public sealed class SessionContext
     public bool RemoteDns { get; set; } = true;
     public bool BypassGlobalTun { get; set; } = true;
     public string? PreferredOutboundInterface { get; set; }
+    public string? ProtocolDisplayOverride { get; set; }
 }
 
 public sealed class LocalProxyBridge : IDisposable
@@ -149,7 +150,7 @@ public sealed class LocalProxyBridge : IDisposable
                 TargetDisplay = targetDisplay,
                 FakeIp = nat.FakeIpString ?? string.Empty,
                 ProxyName = shouldDirect ? "Direct" : proxy!.Name,
-                Protocol = shouldDirect ? "Direct" : proxy!.ProtocolDisplay,
+                Protocol = shouldDirect ? "Direct" : (session?.ProtocolDisplayOverride ?? proxy!.ProtocolDisplay),
                 Status = "Connecting"
             };
             ConnectionCreated?.Invoke(record);

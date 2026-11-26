@@ -1,6 +1,6 @@
 # AppProxy
 
-Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点与目标应用程序，在启动应用时拉起独立的后台代理桥接进程并挂起目标主线程注入原生 x86/x64 Hook DLL，将应用的 TCP 连接、DNS 解析（Fake-IP）及派生子进程流量透明转发到指定的 **SOCKS5** 或 **HTTP/HTTPS CONNECT** 代理。
+Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点与目标应用程序，在启动应用时拉起独立的后台代理桥接进程并挂起目标主线程注入原生 x86/x64 Hook DLL，将应用的 TCP 连接、DNS 解析（Fake-IP）及派生子进程流量透明转发到指定的 **SOCKS5** 或 **HTTP/HTTPS CONNECT** 代理（配置可选托管 `xray-core` 后亦支持 **VLESS / REALITY / TLS**）。
 
 ## 核心特性
 
@@ -32,9 +32,12 @@ Windows Fluent WPF 应用级代理注入启动工具。通过配置代理节点�
   - UI 监控面板采用有序 FIFO 队列在 UI 线程统一批量刷盘连接更新与桥接断开事件，避免高并发下的跨线程竞争。
 - **C# .NET 8 WPF Fluent UI**：
   - 应用管理：支持拖放 `.exe` 或应用快捷方式（`.lnk`，自动解析 Squirrel/Electron `Update.exe` 目标）自动提取图标、启动参数、工作目录与 PE 架构识别；支持**最大运行实例数上限**配置、**Chromium 系浏览器隔离 Profile**（自动追加 `--user-data-dir`）与**一键生成桌面快捷方式**（免打开 UI 双击直启代理）。
-  - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证）、实时握手延迟测速、**多格式批量导入 / 预览导出**（支持 `socks5://`、`http(s)://`、`host:port:user:pass`、`user:pass@host:port`、IPv6 与 JSON，带导入预览与去重；导出弹窗 `ProxyBatchExportDialog` 支持 URI 列表与 JSON 格式预览、按需仅导出当前筛选结果、一键复制到剪贴板及保存为 `.txt`/`.json` 文件）、**节点落地出口 IP / 国家地区与运营商检测**（经代理隧道直连并绕过全局 TUN，结果持久化展示，点击出口徽章可就地显示已复制确认并写入剪贴板，剪贴板写入优先采用 Win32 原生 API（避免 WPF OLE 剪贴板锁冲突导致的界面卡顿）并保留 WPF 回退），以及直接在节点卡片右侧**一键克隆已有节点**（自动生成新 `Guid`、智能 `(副本)` 去重命名、预填参数编辑并插入源节点下方）。
+  - 代理节点管理：支持 SOCKS5（含 RFC 1929 认证）、HTTP / HTTPS CONNECT（含 Basic 认证），配置 `xray-core` 后额外开放 **VLESS**（REALITY / TLS / Vision / TCP / WS / gRPC / HTTPUpgrade / XHTTP）；支持实时握手延迟测速、**多格式批量导入 / 预览导出**（支持 `socks5://`、`http(s)://`、`host:port:user:pass`、`user:pass@host:port`、IPv6、JSON 与就绪后的 `vless://` 链接，带导入预览、粘贴自动填表与去重；导出弹窗 `ProxyBatchExportDialog` 支持 URI 列表与 JSON 格式预览、按需仅导出当前筛选结果、一键复制到剪贴板及保存为 `.txt`/`.json` 文件）、**节点落地出口 IP / 国家地区与运营商检测**（经代理隧道直连并绕过全局 TUN，结果持久化展示，点击出口徽章可就地显示已复制确认并写入剪贴板，剪贴板写入优先采用 Win32 原生 API（避免 WPF OLE 剪贴板锁冲突导致的界面卡顿）并保留 WPF 回退），以及直接在节点卡片右侧**一键克隆已有节点**（自动生成新 `Guid`、智能 `(副本)` 去重命名、预填参数编辑并插入源节点下方）。
+  - **可选托管 `xray-core` 内核（VLESS / REALITY / TLS）**：
+    - 未配置 `xray.exe` 时保持轻量并仅开放原生 `SOCKS5 / HTTP / HTTPS`；在「系统设置 → Xray-core 托管内核」中可手动浏览指定本地 `xray.exe`，或一键从 GitHub `XTLS/Xray-core` 最新 Release 自动下载解压至 `data\cores\xray.exe` 并校验版本。
+    - 运行时通过 `xray.exe run -c stdin:` 内存管道传递配置（不落盘明文节点文件），并绑定 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Windows Job Object；出站流量通过 `dialerProxy` 链入本地 `PhysicalDirectSocksProxy`（底层走 `OutboundSocketConnector`），自动继承全局 TUN 绕过、DoH over IP:443 与物理网卡故障转移；批量测速与批量出口检测自动复用单个多入站 Sidecar 实例。
   - 实时监控：通过命名管道聚合所有活跃后台桥接的连接目标、Fake-IP、代理状态、握手延迟、实时上传/下载字节统计及进程注入/DNS 事件日志。
-  - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、启动互斥锁（`data\locks\`）与崩溃日志（`data\logs\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移。
+  - 应用相对目录便携存储：配置文件（`data\config.json`）、Chromium 系浏览器隔离目录（`data\profiles\`）、启动互斥锁（`data\locks\`）、崩溃日志（`data\logs\`）及可选托管内核（`data\cores\`）统一保存在程序根目录下的相对 `data\` 目录中（不依赖 `%AppData%`），支持便携压缩包解压即用与跨目录迁移。
 
 ## 目录结构
 
@@ -64,6 +67,7 @@ AppProxy.sln
 
 1. **配置代理节点**：
    - 在「代理节点」页面添加 SOCKS5 / HTTP / HTTPS 节点（可选用户名/密码），点击测速按钮验证节点连通性与握手延迟。
+   - 若需直接导入/使用 `vless://`（含 REALITY / TLS）节点，请先前往「系统设置 → Xray-core 托管内核」指定本地 `xray.exe` 路径或点击「一键下载 Xray-core」。
 2. **添加目标应用**：
    - 支持直接将 `.exe` 或桌面/开始菜单 `.lnk` 快捷方式拖放到应用列表（自动解析目标路径、参数、工作目录、图标与 x86/x64 架构；自动识别 Squirrel/Electron 的 `Update.exe --processStart`）。
    - 为应用绑定目标代理节点（或选择 `Direct` 直连）。
@@ -158,7 +162,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
    - PE 架构检测统一复用 `AppProxy.Core.Services.PeArchitectureDetector`，不要在 Bridge/UI 中重复实现 PE/CLR 解析。
 2. **系统代理隔离与全局 TUN 绕过不可破坏（`IgnoreSystemProxy` / `BypassGlobalTun`）**：
    - 系统代理由四层协同完成：环境变量清除（`BridgeDaemonHost` / `HooksSystemProxy.cpp` / `HooksProcess.cpp`）、`kernelbase` 注册表 Hook（`Internet Settings` & `DefaultConnectionSettings`）、WinINet Hook 与 WinHTTP Hook（`HooksWinHttp.cpp`）。
-   - 全局 TUN 绕过由 `PhysicalNetworkSelector` / `PhysicalDnsResolver` / `OutboundSocketConnector` 协同完成：仅按网卡索引设置 `IP_UNICAST_IF`（大端序）与 `IPV6_UNICAST_IF`（主机序），**切勿** `Bind` 缓存的本地 IP（避免 DHCP 改 IP 失败），也**绝不**对回环地址（`127.0.0.0/8` / `::1` / `localhost`）施加接口绑定；公网域名代理节点优先经物理网卡 **DoH over IP:443** 解析以绕开 `strict_route` 53 端口 WFP 封锁与 Fake-IP 污染，并随 `NetworkEpoch` 自动失效缓存。任何涉及启动流程、网络出口或 Hook 的改动后必须确保 `SystemProxyIsolationTests` 与 `TunBypassTests` 全部通过。
+   - 全局 TUN 绕过由 `PhysicalNetworkSelector` / `PhysicalDnsResolver` / `OutboundSocketConnector` 协同完成：仅按网卡索引设置 `IP_UNICAST_IF`（大端序）与 `IPV6_UNICAST_IF`（主机序），**切勿** `Bind` 缓存的本地 IP（避免 DHCP 改 IP 失败），也**绝不**对回环地址（`127.0.0.0/8` / `::1` / `localhost`）施加接口绑定；公网域名代理节点优先经物理网卡 **DoH over IP:443** 解析以绕开 `strict_route` 53 端口 WFP 封锁与 Fake-IP 污染，并随 `NetworkEpoch` 自动失效缓存；托管 `xray-core` Sidecar 通过 `PhysicalDirectSocksProxy`（`dialerProxy`）统一走该物理出口链路。任何涉及启动流程、网络出口或 Hook 的改动后必须确保 `SystemProxyIsolationTests` 与 `TunBypassTests` 全部通过。
 3. **跨进程二进制布局与扩展 DNS 结构体**：
    - `src/native/AppProxy.Common/SharedLayout.h` 与 `src/AppProxy.Core/Services/SharedMemoryService.cs` 共享内存二进制偏移必须严格一一对应；修改原生代码后必须同时重编 `Win32` 与 `x64`（`scripts\build.bat`）。
    - `HooksDns.cpp` 的 `HookedGetAddrInfoExW` 必须通过 `FakeAddrInfoExNode` 覆盖 `ADDRINFOEXW` ~ `ADDRINFOEX7`（切勿退回仅分配基础 `ADDRINFOEXW`，否则会导致 `webio.dll` 越界读 `ai_fqdn` 触发 `0xC0000409` 崩溃，例如 Steam 登录闪退）。
@@ -169,7 +173,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
    - `AppProxy.UI` 默认使用 `--launch-stdin` 匿名管道隐藏代理凭据，同时必须保留 `--launch-app-id <Guid>`（桌面快捷方式）与 `--launch-b64`（测试/脚本兼容）。
    - 运行 `scripts\package.ps1` 会先清空 `artifacts\package\AppProxy\`；若日常曾直接在该目录运行并生成了 `data\config.json`，打包前请先备份其中的 `data\` 目录。
 6. **回归测试基线**：
-   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **67 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、全局 TUN 绕过与多网卡故障转移、代理批量导入/导出与落地 IP 检测、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
+   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **73 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制、系统代理隔离、全局 TUN 绕过与多网卡故障转移、代理批量导入/导出与落地 IP 检测、托管 Xray-core / VLESS REALITY 解析与物理直连拨号（`XrayCoreTests`）、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
 
 ## 已知限制
 

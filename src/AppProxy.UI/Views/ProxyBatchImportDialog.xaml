@@ -49,7 +49,8 @@
                     </Border>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="支持多格式每行一条或整段 JSON 导入" FontSize="13.5" FontWeight="SemiBold" />
-                        <TextBlock Text="socks5://user:pass@host:port#备注 · http(s)://host:port · host:port:user:pass · user:pass@host:port · host:port · AppProxy JSON"
+                        <TextBlock x:Name="FormatHintTextBlock"
+                                   Text="socks5://user:pass@host:port#备注 · http(s)://host:port · host:port:user:pass · user:pass@host:port · host:port · AppProxy JSON"
                                    FontSize="11.5"
                                    Margin="0,2,0,0"
                                    TextWrapping="Wrap"

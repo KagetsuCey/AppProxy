@@ -49,7 +49,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnAddProxyClick(object sender, RoutedEventArgs e)
     {
-        var dlg = new ProxyEditDialog(null) { Owner = this };
+        var dlg = new ProxyEditDialog(null, xrayAvailable: App.ViewModel.IsXrayCoreAvailable) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             App.ViewModel.AddOrUpdateProxy(dlg.ResultProxy);
@@ -58,7 +58,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnBatchImportProxiesClick(object sender, RoutedEventArgs e)
     {
-        var dlg = new ProxyBatchImportDialog(App.ViewModel.Proxies) { Owner = this };
+        var dlg = new ProxyBatchImportDialog(App.ViewModel.Proxies, App.ViewModel.IsXrayCoreAvailable) { Owner = this };
         if (dlg.ShowDialog() == true && dlg.ImportedProxies.Count > 0)
         {
             App.ViewModel.ImportProxies(dlg.ImportedProxies, dlg.SkipDuplicates);
@@ -96,7 +96,7 @@ public partial class MainWindow : FluentWindow
         if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;
         int sourceIndex = App.ViewModel.Proxies.IndexOf(proxy);
         ProxyProfile draft = App.ViewModel.CreateClonedProxyDraft(proxy);
-        var dlg = new ProxyEditDialog(draft, isCloneMode: true) { Owner = this };
+        var dlg = new ProxyEditDialog(draft, isCloneMode: true, xrayAvailable: App.ViewModel.IsXrayCoreAvailable) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             App.ViewModel.AddOrUpdateProxy(dlg.ResultProxy, insertAfterIndex: sourceIndex >= 0 ? sourceIndex : null);
@@ -112,10 +112,23 @@ public partial class MainWindow : FluentWindow
     private void OnEditProxyClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ProxyProfile proxy) return;
-        var dlg = new ProxyEditDialog(proxy) { Owner = this };
+        var dlg = new ProxyEditDialog(proxy, xrayAvailable: App.ViewModel.IsXrayCoreAvailable) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             App.ViewModel.AddOrUpdateProxy(dlg.ResultProxy);
+        }
+    }
+
+    private void OnBrowseXrayCoreClick(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择 Xray-core 可执行文件 (xray.exe)",
+            Filter = "xray.exe|xray.exe|可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"
+        };
+        if (dlg.ShowDialog(this) == true)
+        {
+            App.ViewModel.XrayCorePath = dlg.FileName;
         }
     }
 

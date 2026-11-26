@@ -106,6 +106,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _outboundNetworkSummary = string.Empty;
 
+    [ObservableProperty]
+    private string _xrayCorePath = string.Empty;
+
+    [ObservableProperty]
+    private bool _isXrayCoreAvailable;
+
+    [ObservableProperty]
+    private string _xrayCoreStatusText = "未配置 Xray-core（仅开放原生 SOCKS5 / HTTP / HTTPS）";
+
+    [ObservableProperty]
+    private bool _isDownloadingXray;
+
+    [ObservableProperty]
+    private string _xrayDownloadStatusText = string.Empty;
+
+    [ObservableProperty]
+    private double _xrayDownloadProgressPercent;
+
+    private CancellationTokenSource? _xrayDownloadCts;
+
     public MainViewModel()
     {
         _configService = new ConfigService();
@@ -122,8 +142,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         TestProbePort = _config.TestProbePort is > 0 and <= 65535 ? _config.TestProbePort : 80;
         BypassGlobalTun = _config.BypassGlobalTun;
         PreferredOutboundInterface = _config.PreferredOutboundInterface ?? string.Empty;
+        XrayCorePath = _config.XrayCorePath ?? string.Empty;
         RefreshOutboundInterfacesCore();
         PhysicalNetworkSelector.NetworkChanged += OnPhysicalNetworkChanged;
+        _ = RefreshXrayCoreStatusAsync();
 
         foreach (var proxy in _config.Proxies)
         {
@@ -175,6 +197,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!_isInitializing)
         {
             SaveConfiguration();
+        }
+    }
+
+    partial void OnXrayCorePathChanged(string value)
+    {
+        if (!_isInitializing)
+        {
+            SaveConfiguration();
+            _ = RefreshXrayCoreStatusAsync();
         }
     }
 
@@ -272,6 +303,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                proxy.Host.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
                proxy.EndpointDisplay.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
                proxy.ProtocolDisplay.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               proxy.SecurityBadgeText.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
+               (proxy.Vless?.Sni.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
                proxy.ExitIp.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
                proxy.ExitLocation.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
                proxy.ExitCountryCode.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
@@ -448,7 +481,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
-        var (ok, _, msg) = await _launcher.LaunchAppAsync(app, proxy, BypassGlobalTun, preferredNic);
+        var (ok, _, msg) = await _launcher.LaunchAppAsync(app, proxy, BypassGlobalTun, preferredNic, XrayCorePath);
         RefreshBridgeSummary();
         StatusMessage = msg;
         if (!ok)
@@ -536,7 +569,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Host = candidate.Host.Trim(),
                 Port = candidate.Port,
                 Username = candidate.Username.Trim(),
-                Password = candidate.Password
+                Password = candidate.Password,
+                Vless = candidate.Protocol == ProxyProtocol.Vless ? candidate.Vless?.Clone() : null
             };
 
             string desiredName = string.IsNullOrWhiteSpace(candidate.Name)
@@ -646,7 +680,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
-        ProxyExitIpInfo? info = await ProxyExitIpDetector.DetectAsync(proxy, BypassGlobalTun, preferredNic);
+        ProxyExitIpInfo? info = await ProxyExitIpDetector.DetectAsync(
+            proxy,
+            BypassGlobalTun,
+            preferredNic,
+            xrayCorePath: XrayCorePath);
         if (info is not null)
         {
             SaveConfiguration();
@@ -674,25 +712,59 @@ public partial class MainViewModel : ObservableObject, IDisposable
         int succeeded = 0;
         var list = Proxies.ToList();
 
-        var tasks = list.Select(async proxy =>
+        XraySidecarSession? batchSidecar = null;
+        try
         {
-            if (proxy.IsDetectingExitIp) return;
-            await gate.WaitAsync();
-            try
+            var vlessProxies = list.Where(p => p.RequiresXrayCore && !p.IsDetectingExitIp).ToList();
+            string? xrayExe = XrayCoreManager.ResolveXrayPath(XrayCorePath);
+            if (vlessProxies.Count > 1 && xrayExe is not null)
             {
-                ProxyExitIpInfo? info = await ProxyExitIpDetector.DetectAsync(proxy, BypassGlobalTun, preferredNic);
-                if (info is not null)
+                try
                 {
-                    Interlocked.Increment(ref succeeded);
+                    batchSidecar = await XraySidecarSession.StartBatchAsync(
+                        xrayExe,
+                        vlessProxies,
+                        BypassGlobalTun,
+                        preferredNic,
+                        CancellationToken.None);
+                }
+                catch
+                {
+                    batchSidecar = null;
                 }
             }
-            finally
-            {
-                gate.Release();
-            }
-        });
 
-        await Task.WhenAll(tasks);
+            var tasks = list.Select(async proxy =>
+            {
+                if (proxy.IsDetectingExitIp) return;
+                await gate.WaitAsync();
+                try
+                {
+                    ProxyProfile? transportOverride = batchSidecar?.GetLocalSocksProfile(proxy.Id);
+                    ProxyExitIpInfo? info = await ProxyExitIpDetector.DetectAsync(
+                        proxy,
+                        BypassGlobalTun,
+                        preferredNic,
+                        xrayCorePath: XrayCorePath,
+                        resolvedTransportOverride: transportOverride);
+                    if (info is not null)
+                    {
+                        Interlocked.Increment(ref succeeded);
+                    }
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+        }
+        finally
+        {
+            batchSidecar?.Dispose();
+        }
+
         if (succeeded > 0)
         {
             SaveConfiguration();
@@ -725,7 +797,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
-        await ProxyTester.TestProxyAsync(proxy, TestProbeHost, TestProbePort, default, BypassGlobalTun, preferredNic);
+        await ProxyTester.TestProxyAsync(
+            proxy,
+            TestProbeHost,
+            TestProbePort,
+            default,
+            BypassGlobalTun,
+            preferredNic,
+            XrayCorePath);
         StatusMessage = $"Tested {proxy.Name}: {proxy.LatencyDisplay}";
     }
 
@@ -735,8 +814,44 @@ public partial class MainViewModel : ObservableObject, IDisposable
         string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
-        var tasks = Proxies.Select(p => ProxyTester.TestProxyAsync(p, TestProbeHost, TestProbePort, default, BypassGlobalTun, preferredNic));
-        await Task.WhenAll(tasks);
+        var list = Proxies.ToList();
+        XraySidecarSession? batchSidecar = null;
+        try
+        {
+            var vlessProxies = list.Where(p => p.RequiresXrayCore && !p.IsTesting).ToList();
+            string? xrayExe = XrayCoreManager.ResolveXrayPath(XrayCorePath);
+            if (vlessProxies.Count > 1 && xrayExe is not null)
+            {
+                try
+                {
+                    batchSidecar = await XraySidecarSession.StartBatchAsync(
+                        xrayExe,
+                        vlessProxies,
+                        BypassGlobalTun,
+                        preferredNic,
+                        CancellationToken.None);
+                }
+                catch
+                {
+                    batchSidecar = null;
+                }
+            }
+
+            var tasks = list.Select(p => ProxyTester.TestProxyAsync(
+                p,
+                TestProbeHost,
+                TestProbePort,
+                default,
+                BypassGlobalTun,
+                preferredNic,
+                XrayCorePath,
+                batchSidecar?.GetLocalSocksProfile(p.Id)));
+            await Task.WhenAll(tasks);
+        }
+        finally
+        {
+            batchSidecar?.Dispose();
+        }
         StatusMessage = "Finished testing all proxies.";
     }
 
@@ -874,6 +989,146 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private async Task RefreshXrayCoreStatusAsync()
+    {
+        string? resolved = XrayCoreManager.ResolveXrayPath(XrayCorePath);
+        if (resolved is null)
+        {
+            IsXrayCoreAvailable = false;
+            XrayCoreStatusText = string.IsNullOrWhiteSpace(XrayCorePath)
+                ? $"未检测到 Xray-core（默认路径 {AppPaths.GetDefaultXrayExePath()} 不存在），当前仅开放原生 SOCKS5 / HTTP / HTTPS"
+                : $"指定路径不存在 xray.exe: {XrayCorePath}，当前仅开放原生 SOCKS5 / HTTP / HTTPS";
+            return;
+        }
+
+        string? version = await XrayCoreManager.DetectVersionAsync(resolved);
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            IsXrayCoreAvailable = true;
+            XrayCoreStatusText = $"已就绪 · {version} ({resolved})";
+        }
+        else
+        {
+            IsXrayCoreAvailable = false;
+            XrayCoreStatusText = $"无法识别或运行 xray.exe: {resolved}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task DownloadXrayCoreAsync()
+    {
+        if (IsDownloadingXray) return;
+
+        IsDownloadingXray = true;
+        XrayDownloadProgressPercent = 0;
+        XrayDownloadStatusText = "正在准备下载 Xray-core...";
+        _xrayDownloadCts = new CancellationTokenSource();
+
+        var progress = new Progress<XrayDownloadProgress>(p =>
+        {
+            if (p.TotalBytes is > 0)
+            {
+                double pct = Math.Clamp((double)p.BytesReceived * 100.0 / p.TotalBytes.Value, 0, 100);
+                XrayDownloadProgressPercent = pct;
+                double mbDown = p.BytesReceived / (1024.0 * 1024.0);
+                double mbTotal = p.TotalBytes.Value / (1024.0 * 1024.0);
+                XrayDownloadStatusText = $"{p.Stage} {mbDown:F1} / {mbTotal:F1} MB ({pct:F0}%)";
+            }
+            else
+            {
+                XrayDownloadStatusText = p.Stage;
+            }
+        });
+
+        try
+        {
+            XrayDownloadResult res = await XrayCoreManager.DownloadLatestAsync(
+                progress: progress,
+                ct: _xrayDownloadCts.Token);
+
+            _isInitializing = true;
+            try
+            {
+                XrayCorePath = string.Empty;
+            }
+            finally
+            {
+                _isInitializing = false;
+            }
+
+            SaveConfiguration();
+            await RefreshXrayCoreStatusAsync();
+            XrayDownloadProgressPercent = 100;
+            XrayDownloadStatusText = $"下载并验证成功: {res.DetectedVersion}";
+            StatusMessage = $"Xray-core 下载完成 ({res.VersionTag})";
+        }
+        catch (OperationCanceledException)
+        {
+            XrayDownloadStatusText = "已取消下载 Xray-core";
+            StatusMessage = "已取消下载 Xray-core";
+        }
+        catch (Exception ex)
+        {
+            string err = $"下载 Xray-core 失败: {ex.Message}";
+            XrayDownloadStatusText = err;
+            StatusMessage = err;
+            System.Windows.MessageBox.Show(
+                $"{err}\n\n如无法直连 GitHub，可手动下载 Xray-windows-64.zip 解压 xray.exe 后在上方浏览指定路径或放入 data\\cores\\xray.exe。",
+                "Xray-core 下载失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _xrayDownloadCts?.Dispose();
+            _xrayDownloadCts = null;
+            IsDownloadingXray = false;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelDownloadXrayCore()
+    {
+        try
+        {
+            _xrayDownloadCts?.Cancel();
+        }
+        catch
+        {
+        }
+    }
+
+    [RelayCommand]
+    private void ClearXrayCorePath()
+    {
+        XrayCorePath = string.Empty;
+        StatusMessage = "已清除自定义 Xray-core 路径";
+    }
+
+    [RelayCommand]
+    private void OpenXrayCoreDirectory()
+    {
+        try
+        {
+            string? resolved = XrayCoreManager.ResolveXrayPath(XrayCorePath);
+            string targetDir = resolved is not null
+                ? (Path.GetDirectoryName(resolved) ?? AppPaths.GetCoresDirectory())
+                : AppPaths.GetCoresDirectory();
+            Directory.CreateDirectory(targetDir);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{targetDir}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"打开 Xray-core 目录失败: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
     public void SaveConfiguration()
     {
         _config.Proxies = Proxies.ToList();
@@ -885,6 +1140,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _config.PreferredOutboundInterface = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
+        _config.XrayCorePath = string.IsNullOrWhiteSpace(XrayCorePath)
+            ? null
+            : XrayCorePath.Trim();
         _configService.Save(_config);
     }
 

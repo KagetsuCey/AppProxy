@@ -9,8 +9,10 @@ public static class AppPaths
     public const string ConfigFileName = "config.json";
     public const string ProfilesFolderName = "profiles";
     public const string LogsFolderName = "logs";
+    public const string CoresFolderName = "cores";
     public const string NativeFolderName = "native";
     public const string BridgeExecutableName = "AppProxy.Bridge.exe";
+    public const string XrayExecutableName = "xray.exe";
     public const string UiCrashLogFileName = "AppProxy.UI.crash.log";
     public const string BridgeCrashLogFileName = "AppProxy.Bridge.crash.log";
 
@@ -61,6 +63,30 @@ public static class AppPaths
 
     public static string GetBridgeExePath(string? customBaseDir = null) =>
         Path.Combine(ResolveBaseDirectory(customBaseDir), BridgeExecutableName);
+
+    public static string GetCoresDirectory(string? customBaseDir = null) =>
+        Path.Combine(GetDataDirectory(customBaseDir), CoresFolderName);
+
+    public static string GetDefaultXrayExePath(string? customBaseDir = null) =>
+        Path.Combine(GetCoresDirectory(customBaseDir), XrayExecutableName);
+
+    public static string? ResolveXrayExePath(string? configuredPath, string? customBaseDir = null)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            string trimmed = configuredPath.Trim().Trim('"');
+            if (!string.IsNullOrWhiteSpace(trimmed))
+            {
+                string candidate = Path.IsPathRooted(trimmed)
+                    ? Path.GetFullPath(trimmed)
+                    : Path.GetFullPath(Path.Combine(ResolveBaseDirectory(customBaseDir), trimmed));
+                return File.Exists(candidate) ? candidate : null;
+            }
+        }
+
+        string defaultPath = GetDefaultXrayExePath(customBaseDir);
+        return File.Exists(defaultPath) ? defaultPath : null;
+    }
 
     public static string EnsureDataDirectoryExists(string? customBaseDir = null)
     {

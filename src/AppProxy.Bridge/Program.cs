@@ -81,6 +81,7 @@ internal static class Program
                     IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
                     BypassGlobalTun = cfg.BypassGlobalTun,
                     PreferredOutboundInterface = cfg.PreferredOutboundInterface,
+                    XrayCorePath = cfg.XrayCorePath,
                     Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
                 };
             }

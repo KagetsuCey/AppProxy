@@ -8,7 +8,8 @@ public enum ProxyProtocol
 {
     Socks5,
     Http,
-    Https
+    Https,
+    Vless
 }
 
 public partial class ProxyProfile : ObservableObject
@@ -37,6 +38,14 @@ public partial class ProxyProfile : ObservableObject
 
     [ObservableProperty]
     private string _password = string.Empty;
+
+    [ObservableProperty]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [NotifyPropertyChangedFor(nameof(HasAuth))]
+    [NotifyPropertyChangedFor(nameof(ProtocolDisplay))]
+    [NotifyPropertyChangedFor(nameof(SecurityBadgeText))]
+    [NotifyPropertyChangedFor(nameof(HasSecurityBadge))]
+    private VlessSettings? _vless;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasExitInfo))]
@@ -108,14 +117,31 @@ public partial class ProxyProfile : ObservableObject
         ProxyProtocol.Socks5 => "SOCKS5",
         ProxyProtocol.Http => "HTTP",
         ProxyProtocol.Https => "HTTPS",
+        ProxyProtocol.Vless => "VLESS",
         _ => "UNKNOWN"
     };
+
+    [JsonIgnore]
+    public bool RequiresXrayCore => Protocol == ProxyProtocol.Vless;
+
+    [JsonIgnore]
+    public string SecurityBadgeText => Protocol == ProxyProtocol.Vless
+        ? Vless?.NormalizedSecurity switch
+        {
+            "reality" => "REALITY",
+            "tls" => "TLS",
+            _ => string.Empty
+        }
+        : string.Empty;
+
+    [JsonIgnore]
+    public bool HasSecurityBadge => !string.IsNullOrEmpty(SecurityBadgeText);
 
     [JsonIgnore]
     public string EndpointDisplay => $"{Host}:{Port}";
 
     [JsonIgnore]
-    public bool HasAuth => !string.IsNullOrWhiteSpace(Username);
+    public bool HasAuth => Protocol != ProxyProtocol.Vless && !string.IsNullOrWhiteSpace(Username);
 
     [JsonIgnore]
     public string LatencyDisplay => IsTesting
@@ -270,6 +296,7 @@ public partial class ProxyProfile : ObservableObject
         Port = Port,
         Username = Username,
         Password = Password,
+        Vless = Vless?.Clone(),
         ExitIp = string.Empty,
         ExitCountryCode = string.Empty,
         ExitLocation = string.Empty,
@@ -291,6 +318,7 @@ public partial class ProxyProfile : ObservableObject
         Port = Port,
         Username = Username,
         Password = Password,
+        Vless = Vless?.Clone(),
         ExitIp = ExitIp,
         ExitCountryCode = ExitCountryCode,
         ExitLocation = ExitLocation,

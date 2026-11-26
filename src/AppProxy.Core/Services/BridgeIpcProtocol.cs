@@ -50,6 +50,9 @@ public sealed class BridgeLaunchRequest
     [JsonPropertyName("preferredOutboundInterface")]
     public string? PreferredOutboundInterface { get; set; }
 
+    [JsonPropertyName("xrayCorePath")]
+    public string? XrayCorePath { get; set; }
+
     [JsonPropertyName("proxy")]
     public BridgeProxyConfig? Proxy { get; set; }
 
@@ -88,6 +91,10 @@ public sealed class BridgeProxyConfig
     [JsonPropertyName("password")]
     public string Password { get; set; } = string.Empty;
 
+    [JsonPropertyName("vless")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VlessSettings? Vless { get; set; }
+
     public static BridgeProxyConfig FromProfile(ProxyProfile profile) => new()
     {
         Name = profile.Name,
@@ -95,7 +102,8 @@ public sealed class BridgeProxyConfig
         Host = profile.Host,
         Port = profile.Port,
         Username = profile.Username,
-        Password = profile.Password
+        Password = profile.Password,
+        Vless = profile.Vless?.Clone()
     };
 
     public ProxyProfile ToProfile() => new()
@@ -105,7 +113,8 @@ public sealed class BridgeProxyConfig
         Host = Host,
         Port = Port,
         Username = Username,
-        Password = Password
+        Password = Password,
+        Vless = Vless?.Clone()
     };
 }
 

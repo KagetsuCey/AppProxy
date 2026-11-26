@@ -3,9 +3,11 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="配置代理节点"
-                 Width="480"
-                 Height="535"
-                 ResizeMode="NoResize"
+                 Width="540"
+                 Height="640"
+                 MinWidth="480"
+                 MinHeight="540"
+                 ResizeMode="CanResize"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -24,7 +26,7 @@
                 <!-- Header Banner -->
                 <Border CornerRadius="10"
                         Padding="14,12"
-                        Margin="0,0,0,14"
+                        Margin="0,0,0,12"
                         BorderThickness="1"
                         BorderBrush="{DynamicResource SemanticInfoBorderBrush}"
                         Background="{DynamicResource SemanticInfoBgBrush}">
@@ -38,12 +40,29 @@
                         </Border>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock x:Name="BannerTitleText" Text="上游代理节点参数" FontSize="14" FontWeight="SemiBold" />
-                            <TextBlock Text="支持 SOCKS5、HTTP CONNECT 与 HTTPS TLS 隧道转发"
+                            <TextBlock x:Name="BannerSubtitleText"
+                                       Text="支持 SOCKS5、HTTP CONNECT 与 HTTPS TLS 隧道转发"
                                        FontSize="11.5"
                                        Margin="0,2,0,0"
+                                       TextWrapping="Wrap"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </StackPanel>
+                </Border>
+
+                <!-- Xray Missing Warning Banner -->
+                <Border x:Name="XrayMissingWarningBorder"
+                        Visibility="Collapsed"
+                        CornerRadius="9"
+                        Padding="12,9"
+                        Margin="0,0,0,12"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource SemanticWarningBorderBrush}"
+                        Background="{DynamicResource SemanticWarningBgBrush}">
+                    <TextBlock Text="当前未配置 Xray-core 内核，此 VLESS 节点暂时无法测速、查出口或用于启动应用。请前往「系统设置 → Xray-core 托管内核」指定 xray.exe 或一键下载。"
+                               FontSize="11.5"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SemanticWarningBrush}" />
                 </Border>
 
                 <!-- Section 1: Identity & Protocol -->
@@ -53,15 +72,16 @@
                         <ui:TextBox x:Name="NameBox" PlaceholderText="例如: HK SOCKS5" Margin="0,0,0,12" />
 
                         <TextBlock Text="代理协议" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ComboBox x:Name="ProtocolCombo">
+                        <ComboBox x:Name="ProtocolCombo" SelectionChanged="OnProtocolSelectionChanged">
                             <ComboBoxItem Content="SOCKS5" Tag="Socks5" />
                             <ComboBoxItem Content="HTTP (CONNECT)" Tag="Http" />
                             <ComboBoxItem Content="HTTPS (TLS CONNECT)" Tag="Https" />
+                            <ComboBoxItem x:Name="VlessProtocolItem" Content="VLESS (Xray-core)" Tag="Vless" />
                         </ComboBox>
                     </StackPanel>
                 </Border>
 
-                <!-- Section 2: Endpoint & Auth -->
+                <!-- Section 2: Endpoint & Auth / VLESS -->
                 <Border Style="{StaticResource SectionCardStyle}" Padding="14">
                     <StackPanel>
                         <Grid Margin="0,0,0,12">
@@ -82,17 +102,192 @@
 
                         <Border Height="1" Margin="0,0,0,12" Background="{DynamicResource SubtleDividerBrush}" />
 
-                        <TextBlock Text="身份认证（无认证可留空）"
-                                   FontSize="12"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,0,8"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <!-- Standard SOCKS5 / HTTP Auth Panel -->
+                        <StackPanel x:Name="StandardAuthPanel">
+                            <TextBlock Text="身份认证（无认证可留空）"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,8"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
 
-                        <TextBlock Text="用户名" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ui:TextBox x:Name="UsernameBox" PlaceholderText="可选" Margin="0,0,0,10" />
+                            <TextBlock Text="用户名" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <ui:TextBox x:Name="UsernameBox" PlaceholderText="可选" Margin="0,0,0,10" />
 
-                        <TextBlock Text="密码" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ui:PasswordBox x:Name="PasswordInput" PlaceholderText="可选" />
+                            <TextBlock Text="密码" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <ui:PasswordBox x:Name="PasswordInput" PlaceholderText="可选" />
+                        </StackPanel>
+
+                        <!-- VLESS / REALITY Panel -->
+                        <StackPanel x:Name="VlessSettingsPanel" Visibility="Collapsed">
+                            <Grid Margin="0,0,0,10">
+                                <TextBlock Text="VLESS / 传输安全参数"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <ui:Button Content="粘贴 vless:// 自动填充"
+                                           Icon="{ui:SymbolIcon Copy24}"
+                                           Appearance="Secondary"
+                                           Padding="9,4"
+                                           FontSize="11.5"
+                                           HorizontalAlignment="Right"
+                                           Click="OnPasteVlessUriClick" />
+                            </Grid>
+
+                            <TextBlock Text="UUID (id)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <ui:TextBox x:Name="VlessUuidBox" PlaceholderText="例如: 6611d690-5e50-403e-9a90-e1877a69e350" Margin="0,0,0,10" />
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="传输协议 (type)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <ComboBox x:Name="VlessNetworkCombo" SelectionChanged="OnVlessOptionChanged">
+                                        <ComboBoxItem Content="tcp" Tag="tcp" />
+                                        <ComboBoxItem Content="ws" Tag="ws" />
+                                        <ComboBoxItem Content="grpc" Tag="grpc" />
+                                        <ComboBoxItem Content="httpupgrade" Tag="httpupgrade" />
+                                        <ComboBoxItem Content="xhttp" Tag="xhttp" />
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="传输安全 (security)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <ComboBox x:Name="VlessSecurityCombo" SelectionChanged="OnVlessOptionChanged">
+                                        <ComboBoxItem Content="reality" Tag="reality" />
+                                        <ComboBoxItem Content="tls" Tag="tls" />
+                                        <ComboBoxItem Content="none" Tag="none" />
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="流控 (flow，可选)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <ComboBox x:Name="VlessFlowCombo" IsEditable="True">
+                                        <ComboBoxItem Content="" />
+                                        <ComboBoxItem Content="xtls-rprx-vision" />
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="加密 (encryption)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="VlessEncryptionBox" PlaceholderText="none" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- TLS / REALITY Shared Section -->
+                            <StackPanel x:Name="VlessTlsCommonPanel">
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="SNI (serverName)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessSniBox" PlaceholderText="例如: www.hsbc.hk" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="uTLS 指纹 (fp)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ComboBox x:Name="VlessFingerprintCombo" IsEditable="True">
+                                            <ComboBoxItem Content="chrome" />
+                                            <ComboBoxItem Content="firefox" />
+                                            <ComboBoxItem Content="safari" />
+                                            <ComboBoxItem Content="edge" />
+                                            <ComboBoxItem Content="ios" />
+                                            <ComboBoxItem Content="android" />
+                                            <ComboBoxItem Content="random" />
+                                            <ComboBoxItem Content="randomized" />
+                                            <ComboBoxItem Content="" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- REALITY Specific Fields -->
+                            <StackPanel x:Name="VlessRealityPanel">
+                                <TextBlock Text="PublicKey (pbk)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                <ui:TextBox x:Name="VlessPublicKeyBox" PlaceholderText="REALITY x25519 公钥" Margin="0,0,0,10" />
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="ShortId (sid)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessShortIdBox" PlaceholderText="可选十六进制 ID" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="SpiderX (spx)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessSpiderXBox" PlaceholderText="例如: /" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- TLS Specific Fields -->
+                            <StackPanel x:Name="VlessTlsExtraPanel" Visibility="Collapsed">
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="ALPN (逗号分隔，可选)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessAlpnBox" PlaceholderText="例如: h2,http/1.1" />
+                                    </StackPanel>
+                                    <CheckBox x:Name="VlessAllowInsecureCheck"
+                                              Grid.Column="2"
+                                              Content="跳过证书验证"
+                                              VerticalAlignment="Bottom"
+                                              Margin="0,0,0,6" />
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Transport Extra Fields (ws/grpc/httpupgrade/xhttp/http-header) -->
+                            <StackPanel x:Name="VlessTransportExtraPanel" Visibility="Collapsed">
+                                <Border Height="1" Margin="0,4,0,10" Background="{DynamicResource SubtleDividerBrush}" />
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="路径 (path)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessPathBox" PlaceholderText="例如: /ws" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="伪装域名 (host)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessHostHeaderBox" PlaceholderText="可选" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="gRPC ServiceName" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessServiceNameBox" PlaceholderText="可选" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="模式 / 伪装类型 (mode)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <ui:TextBox x:Name="VlessModeBox" PlaceholderText="例如: auto / multi" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>

@@ -32,7 +32,8 @@ public sealed class AppLauncherService : IDisposable
         AppProfile app,
         ProxyProfile? proxy,
         bool bypassGlobalTun = true,
-        string? preferredOutboundInterface = null)
+        string? preferredOutboundInterface = null,
+        string? xrayCorePath = null)
     {
         if (string.IsNullOrWhiteSpace(app.ExePath) || !File.Exists(app.ExePath))
         {
@@ -72,6 +73,7 @@ public sealed class AppLauncherService : IDisposable
             IsolateProfileDir = app.GetEffectiveIsolateProfileDir(),
             BypassGlobalTun = bypassGlobalTun,
             PreferredOutboundInterface = preferredOutboundInterface,
+            XrayCorePath = xrayCorePath,
             Proxy = proxy is not null ? BridgeProxyConfig.FromProfile(proxy) : null
         };
 

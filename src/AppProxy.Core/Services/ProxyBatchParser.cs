@@ -36,9 +36,14 @@ public static class ProxyBatchParser
         string Host,
         int Port,
         string Username,
-        string Password);
+        string Password,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        VlessSettings? Vless = null);
 
-    public static ProxyBatchParseResult Parse(string? input, ProxyProtocol defaultProtocol = ProxyProtocol.Socks5)
+    public static ProxyBatchParseResult Parse(
+        string? input,
+        ProxyProtocol defaultProtocol = ProxyProtocol.Socks5,
+        bool allowXrayProtocols = true)
     {
         if (string.IsNullOrWhiteSpace(input))
         {
@@ -47,7 +52,7 @@ public static class ProxyBatchParser
 
         string trimmedWhole = input.Trim();
         if ((trimmedWhole.StartsWith('[') || trimmedWhole.StartsWith('{')) &&
-            TryParseJson(trimmedWhole, out ProxyBatchParseResult? jsonResult))
+            TryParseJson(trimmedWhole, allowXrayProtocols, out ProxyBatchParseResult? jsonResult))
         {
             return jsonResult!;
         }
@@ -65,7 +70,7 @@ public static class ProxyBatchParser
                 continue;
             }
 
-            if (TryParseSingleLine(line, defaultProtocol, out ProxyProfile? proxy, out string error))
+            if (TryParseSingleLine(line, defaultProtocol, allowXrayProtocols, out ProxyProfile? proxy, out string error))
             {
                 proxies.Add(proxy!);
             }
@@ -82,6 +87,22 @@ public static class ProxyBatchParser
     public static string BuildDedupeKey(ProxyProfile proxy)
     {
         string host = (proxy.Host ?? string.Empty).Trim().ToLowerInvariant();
+        if (proxy.Protocol == ProxyProtocol.Vless && proxy.Vless is { } v)
+        {
+            return string.Join(
+                '|',
+                proxy.Protocol,
+                host,
+                proxy.Port,
+                v.Uuid.Trim().ToLowerInvariant(),
+                v.NormalizedSecurity,
+                v.Sni.Trim().ToLowerInvariant(),
+                v.PublicKey.Trim(),
+                v.ShortId.Trim(),
+                v.NormalizedNetwork,
+                v.Flow.Trim());
+        }
+
         string user = (proxy.Username ?? string.Empty).Trim();
         return $"{proxy.Protocol}|{host}|{proxy.Port}|{user}";
     }
@@ -91,14 +112,6 @@ public static class ProxyBatchParser
         var lines = new List<string>();
         foreach (ProxyProfile proxy in proxies)
         {
-            string scheme = proxy.Protocol switch
-            {
-                ProxyProtocol.Socks5 => "socks5",
-                ProxyProtocol.Http => "http",
-                ProxyProtocol.Https => "https",
-                _ => "socks5"
-            };
-
             string host = (proxy.Host ?? string.Empty).Trim();
             string formattedHost = IPAddress.TryParse(host, out var ip) &&
                                    ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
@@ -106,27 +119,99 @@ public static class ProxyBatchParser
                 : host;
 
             var sb = new StringBuilder();
-            sb.Append(scheme).Append("://");
-            if (!string.IsNullOrEmpty(proxy.Username))
+            if (proxy.Protocol == ProxyProtocol.Vless && proxy.Vless is not null)
             {
-                sb.Append(Uri.EscapeDataString(proxy.Username));
-                if (!string.IsNullOrEmpty(proxy.Password))
-                {
-                    sb.Append(':').Append(Uri.EscapeDataString(proxy.Password));
-                }
-                sb.Append('@');
+                AppendVlessUri(sb, proxy, formattedHost);
             }
-            sb.Append(formattedHost).Append(':').Append(proxy.Port);
-
-            if (!string.IsNullOrWhiteSpace(proxy.Name))
+            else
             {
-                sb.Append('#').Append(Uri.EscapeDataString(proxy.Name.Trim()));
+                string scheme = proxy.Protocol switch
+                {
+                    ProxyProtocol.Socks5 => "socks5",
+                    ProxyProtocol.Http => "http",
+                    ProxyProtocol.Https => "https",
+                    _ => "socks5"
+                };
+
+                sb.Append(scheme).Append("://");
+                if (!string.IsNullOrEmpty(proxy.Username))
+                {
+                    sb.Append(Uri.EscapeDataString(proxy.Username));
+                    if (!string.IsNullOrEmpty(proxy.Password))
+                    {
+                        sb.Append(':').Append(Uri.EscapeDataString(proxy.Password));
+                    }
+                    sb.Append('@');
+                }
+                sb.Append(formattedHost).Append(':').Append(proxy.Port);
+
+                if (!string.IsNullOrWhiteSpace(proxy.Name))
+                {
+                    sb.Append('#').Append(Uri.EscapeDataString(proxy.Name.Trim()));
+                }
             }
 
             lines.Add(sb.ToString());
         }
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static void AppendVlessUri(StringBuilder sb, ProxyProfile proxy, string formattedHost)
+    {
+        VlessSettings v = proxy.Vless!;
+        sb.Append("vless://");
+        if (!string.IsNullOrEmpty(v.Uuid))
+        {
+            sb.Append(Uri.EscapeDataString(v.Uuid.Trim())).Append('@');
+        }
+        sb.Append(formattedHost).Append(':').Append(proxy.Port);
+
+        var queryPairs = new List<(string Key, string Value)>
+        {
+            ("encryption", string.IsNullOrWhiteSpace(v.Encryption) ? "none" : v.Encryption.Trim()),
+            ("security", v.NormalizedSecurity)
+        };
+
+        void AddIfNonEmpty(string key, string? val)
+        {
+            if (!string.IsNullOrWhiteSpace(val))
+            {
+                queryPairs.Add((key, val.Trim()));
+            }
+        }
+
+        AddIfNonEmpty("sni", v.Sni);
+        AddIfNonEmpty("fp", v.Fingerprint);
+        AddIfNonEmpty("pbk", v.PublicKey);
+        AddIfNonEmpty("sid", v.ShortId);
+        AddIfNonEmpty("spx", v.SpiderX);
+        AddIfNonEmpty("flow", v.Flow);
+        queryPairs.Add(("type", v.NormalizedNetwork));
+        AddIfNonEmpty("headerType", v.HeaderType);
+        AddIfNonEmpty("path", v.Path);
+        AddIfNonEmpty("host", v.HostHeader);
+        AddIfNonEmpty("serviceName", v.ServiceName);
+        AddIfNonEmpty("mode", v.Mode);
+        AddIfNonEmpty("alpn", v.Alpn);
+        if (v.AllowInsecure)
+        {
+            queryPairs.Add(("allowInsecure", "1"));
+        }
+
+        sb.Append('?');
+        for (int i = 0; i < queryPairs.Count; i++)
+        {
+            if (i > 0) sb.Append('&');
+            sb.Append(Uri.EscapeDataString(queryPairs[i].Key))
+              .Append('=')
+              .Append(Uri.EscapeDataString(queryPairs[i].Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(proxy.Name))
+        {
+            sb.Append('#').Append(Uri.EscapeDataString(proxy.Name.Trim()));
+        }
     }
 
     public static string ExportToJson(IEnumerable<ProxyProfile> proxies)
@@ -139,12 +224,13 @@ public static class ProxyBatchParser
                 (p.Host ?? string.Empty).Trim(),
                 p.Port,
                 p.Username ?? string.Empty,
-                p.Password ?? string.Empty))
+                p.Password ?? string.Empty,
+                p.Protocol == ProxyProtocol.Vless ? p.Vless?.Clone() : null))
             .ToList();
         return JsonSerializer.Serialize(items, IndentedJsonOptions);
     }
 
-    private static bool TryParseJson(string json, out ProxyBatchParseResult? result)
+    private static bool TryParseJson(string json, bool allowXrayProtocols, out ProxyBatchParseResult? result)
     {
         result = null;
         try
@@ -188,14 +274,30 @@ public static class ProxyBatchParser
                     continue;
                 }
 
+                if (item.Protocol == ProxyProtocol.Vless)
+                {
+                    if (!allowXrayProtocols)
+                    {
+                        errors.Add(new ProxyBatchParseError(i + 1, $"{host}:{item.Port}", "检测到 VLESS 节点，请先在「系统设置 → Xray-core 托管内核」中配置路径或一键下载 xray.exe"));
+                        continue;
+                    }
+                    string vlessErr = string.Empty;
+                    if (item.Vless is null || !item.Vless.Validate(out vlessErr))
+                    {
+                        errors.Add(new ProxyBatchParseError(i + 1, $"{host}:{item.Port}", item.Vless is null ? "VLESS 节点缺少 vless 参数对象" : vlessErr));
+                        continue;
+                    }
+                }
+
                 var fresh = new ProxyProfile
                 {
                     Id = Guid.NewGuid(),
                     Protocol = item.Protocol,
                     Host = host,
                     Port = item.Port,
-                    Username = item.Username?.Trim() ?? string.Empty,
-                    Password = item.Password ?? string.Empty
+                    Username = item.Protocol == ProxyProtocol.Vless ? string.Empty : (item.Username?.Trim() ?? string.Empty),
+                    Password = item.Protocol == ProxyProtocol.Vless ? string.Empty : (item.Password ?? string.Empty),
+                    Vless = item.Protocol == ProxyProtocol.Vless ? item.Vless!.Clone() : null
                 };
                 fresh.Name = string.IsNullOrWhiteSpace(item.Name)
                     ? $"{fresh.ProtocolDisplay} {fresh.Host}:{fresh.Port}"
@@ -220,6 +322,7 @@ public static class ProxyBatchParser
     private static bool TryParseSingleLine(
         string line,
         ProxyProtocol defaultProtocol,
+        bool allowXrayProtocols,
         out ProxyProfile? proxy,
         out string error)
     {
@@ -232,14 +335,14 @@ public static class ProxyBatchParser
             string prefix = line[..schemeIdx];
             if (prefix.All(char.IsLetterOrDigit))
             {
-                return TryParseUriLine(line, out proxy, out error);
+                return TryParseUriLine(line, allowXrayProtocols, out proxy, out error);
             }
         }
 
         return TryParsePlainLine(line, defaultProtocol, out proxy, out error);
     }
 
-    private static bool TryParseUriLine(string line, out ProxyProfile? proxy, out string error)
+    private static bool TryParseUriLine(string line, bool allowXrayProtocols, out ProxyProfile? proxy, out string error)
     {
         proxy = null;
         error = string.Empty;
@@ -264,8 +367,18 @@ public static class ProxyBatchParser
             case "https":
                 protocol = ProxyProtocol.Https;
                 break;
+            case "vless":
+                if (!allowXrayProtocols)
+                {
+                    error = "检测到 VLESS 节点，请先在「系统设置 → Xray-core 托管内核」中配置路径或一键下载 xray.exe";
+                    return false;
+                }
+                protocol = ProxyProtocol.Vless;
+                break;
             default:
-                error = $"不支持的代理协议 '{uri.Scheme}'（仅支持 socks5/http/https）";
+                error = allowXrayProtocols
+                    ? $"不支持的代理协议 '{uri.Scheme}'（当前支持 socks5/http/https/vless）"
+                    : $"不支持的代理协议 '{uri.Scheme}'（仅支持 socks5/http/https）";
                 return false;
         }
 
@@ -281,6 +394,66 @@ public static class ProxyBatchParser
         {
             error = "URI 缺少有效端口号 (1-65535)";
             return false;
+        }
+
+        string remark = string.Empty;
+        if (!string.IsNullOrEmpty(uri.Fragment) && uri.Fragment.Length > 1)
+        {
+            remark = Uri.UnescapeDataString(uri.Fragment[1..]).Trim();
+        }
+
+        if (protocol == ProxyProtocol.Vless)
+        {
+            string uuid = Uri.UnescapeDataString(uri.UserInfo ?? string.Empty).Trim();
+            Dictionary<string, string> query = ParseQueryString(uri.Query);
+
+            string GetQuery(string key, string fallback = "") =>
+                query.TryGetValue(key, out string? val) ? val : fallback;
+
+            string allowInsecRaw = GetQuery("allowInsecure");
+            if (string.IsNullOrEmpty(allowInsecRaw)) allowInsecRaw = GetQuery("insecure");
+            bool allowInsecure = allowInsecRaw == "1" || string.Equals(allowInsecRaw, "true", StringComparison.OrdinalIgnoreCase);
+
+            var vless = new VlessSettings
+            {
+                Uuid = uuid,
+                Encryption = string.IsNullOrWhiteSpace(GetQuery("encryption")) ? "none" : GetQuery("encryption"),
+                Flow = GetQuery("flow"),
+                Network = string.IsNullOrWhiteSpace(GetQuery("type")) ? "tcp" : GetQuery("type"),
+                HeaderType = string.IsNullOrWhiteSpace(GetQuery("headerType")) ? "none" : GetQuery("headerType"),
+                Security = string.IsNullOrWhiteSpace(GetQuery("security")) ? "none" : GetQuery("security"),
+                Sni = GetQuery("sni"),
+                Fingerprint = GetQuery("fp"),
+                PublicKey = GetQuery("pbk"),
+                ShortId = GetQuery("sid"),
+                SpiderX = GetQuery("spx"),
+                Alpn = GetQuery("alpn"),
+                AllowInsecure = allowInsecure,
+                Path = GetQuery("path"),
+                HostHeader = GetQuery("host"),
+                ServiceName = GetQuery("serviceName"),
+                Mode = GetQuery("mode")
+            };
+
+            if (!vless.Validate(out error))
+            {
+                return false;
+            }
+
+            var vlessProfile = new ProxyProfile
+            {
+                Id = Guid.NewGuid(),
+                Protocol = ProxyProtocol.Vless,
+                Host = host,
+                Port = port,
+                Vless = vless
+            };
+            vlessProfile.Name = string.IsNullOrEmpty(remark)
+                ? $"{vlessProfile.ProtocolDisplay} {vlessProfile.Host}:{vlessProfile.Port}"
+                : remark;
+
+            proxy = vlessProfile;
+            return true;
         }
 
         string username = string.Empty;
@@ -304,12 +477,6 @@ public static class ProxyBatchParser
             }
         }
 
-        string remark = string.Empty;
-        if (!string.IsNullOrEmpty(uri.Fragment) && uri.Fragment.Length > 1)
-        {
-            remark = Uri.UnescapeDataString(uri.Fragment[1..]).Trim();
-        }
-
         var result = new ProxyProfile
         {
             Id = Guid.NewGuid(),
@@ -325,6 +492,36 @@ public static class ProxyBatchParser
 
         proxy = result;
         return true;
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string rawQuery)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(rawQuery)) return map;
+
+        string trimmed = rawQuery.StartsWith('?') ? rawQuery[1..] : rawQuery;
+        foreach (string part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = part.IndexOf('=');
+            if (eq < 0)
+            {
+                string keyOnly = Uri.UnescapeDataString(part.Replace('+', ' ')).Trim();
+                if (!string.IsNullOrEmpty(keyOnly))
+                {
+                    map[keyOnly] = string.Empty;
+                }
+                continue;
+            }
+
+            string key = Uri.UnescapeDataString(part[..eq].Replace('+', ' ')).Trim();
+            string val = Uri.UnescapeDataString(part[(eq + 1)..].Replace('+', ' '));
+            if (!string.IsNullOrEmpty(key))
+            {
+                map[key] = val;
+            }
+        }
+
+        return map;
     }
 
     private static bool TryParsePlainLine(

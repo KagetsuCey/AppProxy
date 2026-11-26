@@ -67,15 +67,19 @@ public static class ProxyExitIpDetector
         ProxyProfile proxy,
         bool bypassGlobalTun = true,
         string? preferredOutboundInterface = null,
-        CancellationToken ct = default) =>
-        DetectAsync(proxy, DefaultEndpoints, bypassGlobalTun, preferredOutboundInterface, ct);
+        CancellationToken ct = default,
+        string? xrayCorePath = null,
+        ProxyProfile? resolvedTransportOverride = null) =>
+        DetectAsync(proxy, DefaultEndpoints, bypassGlobalTun, preferredOutboundInterface, ct, xrayCorePath, resolvedTransportOverride);
 
     public static async Task<ProxyExitIpInfo?> DetectAsync(
         ProxyProfile proxy,
         IReadOnlyList<GeoProbeEndpoint> endpoints,
         bool bypassGlobalTun = true,
         string? preferredOutboundInterface = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? xrayCorePath = null,
+        ProxyProfile? resolvedTransportOverride = null)
     {
         ArgumentNullException.ThrowIfNull(proxy);
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -85,8 +89,38 @@ public static class ProxyExitIpDetector
         proxy.ExitDetectError = string.Empty;
 
         string? lastFailure = null;
+        XraySidecarSession? sidecar = null;
         try
         {
+            ProxyProfile transportProxy = proxy;
+            bool effectiveBypass = bypassGlobalTun;
+
+            if (proxy.RequiresXrayCore)
+            {
+                if (resolvedTransportOverride is not null)
+                {
+                    transportProxy = resolvedTransportOverride;
+                }
+                else
+                {
+                    string? xrayExe = XrayCoreManager.ResolveXrayPath(xrayCorePath);
+                    if (xrayExe is null)
+                    {
+                        proxy.ExitDetectError = "未配置 Xray-core";
+                        return null;
+                    }
+
+                    sidecar = await XraySidecarSession.StartSingleAsync(
+                        xrayExe,
+                        proxy,
+                        bypassGlobalTun,
+                        preferredOutboundInterface,
+                        ct);
+                    transportProxy = sidecar.PrimaryLocalSocksProfile;
+                }
+                effectiveBypass = false;
+            }
+
             foreach (GeoProbeEndpoint endpoint in endpoints)
             {
                 if (ct.IsCancellationRequested) break;
@@ -97,9 +131,9 @@ public static class ProxyExitIpDetector
                     providerCts.CancelAfter(TimeSpan.FromSeconds(8));
 
                     ProxyExitIpInfo? info = await ProbeSingleEndpointAsync(
-                        proxy,
+                        transportProxy,
                         endpoint,
-                        bypassGlobalTun,
+                        effectiveBypass,
                         preferredOutboundInterface,
                         providerCts.Token);
 
@@ -136,6 +170,7 @@ public static class ProxyExitIpDetector
         }
         finally
         {
+            sidecar?.Dispose();
             proxy.IsDetectingExitIp = false;
         }
     }
