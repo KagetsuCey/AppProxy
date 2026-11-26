@@ -1,11 +1,15 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using AppProxy.Core.Models;
 using AppProxy.Core.Services;
 using AppProxy.UI.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;
 
@@ -13,27 +17,84 @@ namespace AppProxy.UI.Views;
 
 public partial class ProxyBatchExportDialog : FluentWindow
 {
-    private readonly IReadOnlyList<ProxyProfile> _allProxies;
-    private readonly IReadOnlyList<ProxyProfile> _filteredProxies;
+    private sealed partial class ExportNodeItem : ObservableObject
+    {
+        public ExportNodeItem(ProxyProfile profile, bool isFilteredMatch, bool isChecked)
+        {
+            Profile = profile;
+            IsFilteredMatch = isFilteredMatch;
+            _isChecked = isChecked;
+        }
+
+        public ProxyProfile Profile { get; }
+        public bool IsFilteredMatch { get; }
+
+        [ObservableProperty]
+        private bool _isChecked;
+
+        public string Name => Profile.Name;
+        public string ProtocolDisplay => Profile.ProtocolDisplay;
+        public string EndpointDisplay => Profile.EndpointDisplay;
+
+        public string SecondaryTag
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(Profile.ExitCountryCode))
+                {
+                    return Profile.ExitCountryCode.Trim();
+                }
+
+                if (Profile.LastLatencyMs.HasValue)
+                {
+                    return $"{Profile.LastLatencyMs.Value}ms";
+                }
+
+                return string.Empty;
+            }
+        }
+    }
+
+    private readonly ObservableCollection<ExportNodeItem> _allItems = new();
+    private readonly ICollectionView _itemsView;
     private readonly bool _showFilterOption;
+    private bool _suppressRefresh;
 
     public string? LastStatusMessage { get; private set; }
 
     public ProxyBatchExportDialog(
         IReadOnlyList<ProxyProfile> allProxies,
         IReadOnlyList<ProxyProfile>? filteredProxies = null,
-        bool isFiltered = false)
+        bool isFiltered = false,
+        IReadOnlyCollection<Guid>? preselectedIds = null)
     {
-        _allProxies = allProxies ?? [];
-        _filteredProxies = filteredProxies ?? _allProxies;
-        _showFilterOption = isFiltered && _filteredProxies.Count != _allProxies.Count;
+        IReadOnlyList<ProxyProfile> safeAll = allProxies ?? [];
+        var filteredSet = (filteredProxies ?? safeAll).Select(p => p.Id).ToHashSet();
+        bool hasPreselection = preselectedIds is { Count: > 0 };
+        var preselectedSet = hasPreselection ? preselectedIds!.ToHashSet() : null;
+        _showFilterOption = isFiltered && filteredSet.Count > 0 && filteredSet.Count < safeAll.Count;
+
+        foreach (ProxyProfile proxy in safeAll)
+        {
+            bool inFiltered = filteredSet.Contains(proxy.Id);
+            bool initialChecked = hasPreselection
+                ? preselectedSet!.Contains(proxy.Id)
+                : (!_showFilterOption || inFiltered);
+
+            var item = new ExportNodeItem(proxy, inFiltered, initialChecked);
+            item.PropertyChanged += OnExportItemPropertyChanged;
+            _allItems.Add(item);
+        }
 
         InitializeComponent();
 
+        _itemsView = CollectionViewSource.GetDefaultView(_allItems);
+        _itemsView.Filter = FilterExportItem;
+        NodeChecklistControl.ItemsSource = _itemsView;
+
         if (_showFilterOption)
         {
-            FilteredOnlyCheckBox.Content = $"仅导出当前筛选结果 ({_filteredProxies.Count})";
-            FilteredOnlyCheckBox.Visibility = Visibility.Visible;
+            SelectFilteredOnlyButton.Visibility = Visibility.Visible;
         }
 
         RefreshOutput();
@@ -42,13 +103,90 @@ public partial class ProxyBatchExportDialog : FluentWindow
     private bool IsJsonMode =>
         string.Equals((FormatCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString(), "Json", StringComparison.OrdinalIgnoreCase);
 
-    private IReadOnlyList<ProxyProfile> ActiveProxies =>
-        _showFilterOption && FilteredOnlyCheckBox.IsChecked == true
-            ? _filteredProxies
-            : _allProxies;
+    private List<ProxyProfile> SelectedProxies =>
+        _allItems.Where(i => i.IsChecked).Select(i => i.Profile).ToList();
+
+    private bool FilterExportItem(object obj)
+    {
+        if (obj is not ExportNodeItem item) return false;
+        string query = NodeFilterBox?.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(query)) return true;
+
+        ProxyProfile p = item.Profile;
+        return p.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               p.Host.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               p.EndpointDisplay.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               p.ProtocolDisplay.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               p.ExitIp.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               p.ExitLocation.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               p.ExitCountryCode.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OnExportItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_suppressRefresh) return;
+        if (e.PropertyName == nameof(ExportNodeItem.IsChecked))
+        {
+            RefreshOutput();
+        }
+    }
 
     private void OnOptionChanged(object sender, RoutedEventArgs e)
     {
+        RefreshOutput();
+    }
+
+    private void OnNodeFilterChanged(object sender, TextChangedEventArgs e)
+    {
+        _itemsView.Refresh();
+    }
+
+    private void OnSelectAllClick(object sender, RoutedEventArgs e)
+    {
+        SetVisibleSelection(_ => true);
+    }
+
+    private void OnInvertSelectionClick(object sender, RoutedEventArgs e)
+    {
+        SetVisibleSelection(item => !item.IsChecked);
+    }
+
+    private void OnClearSelectionClick(object sender, RoutedEventArgs e)
+    {
+        SetVisibleSelection(_ => false);
+    }
+
+    private void OnSelectFilteredOnlyClick(object sender, RoutedEventArgs e)
+    {
+        _suppressRefresh = true;
+        try
+        {
+            foreach (ExportNodeItem item in _allItems)
+            {
+                item.IsChecked = item.IsFilteredMatch;
+            }
+        }
+        finally
+        {
+            _suppressRefresh = false;
+        }
+        RefreshOutput();
+    }
+
+    private void SetVisibleSelection(Func<ExportNodeItem, bool> selector)
+    {
+        _suppressRefresh = true;
+        try
+        {
+            foreach (ExportNodeItem item in _itemsView.Cast<ExportNodeItem>())
+            {
+                item.IsChecked = selector(item);
+            }
+        }
+        finally
+        {
+            _suppressRefresh = false;
+        }
         RefreshOutput();
     }
 
@@ -59,12 +197,24 @@ public partial class ProxyBatchExportDialog : FluentWindow
             return;
         }
 
-        IReadOnlyList<ProxyProfile> target = ActiveProxies;
-        OutputTextBox.Text = IsJsonMode
-            ? ProxyBatchParser.ExportToJson(target)
-            : ProxyBatchParser.ExportToUriLines(target);
+        List<ProxyProfile> target = SelectedProxies;
+        int checkedCount = target.Count;
+        bool hasSelection = checkedCount > 0;
 
-        SummaryTextBlock.Text = $"共导出 {target.Count} 个代理节点";
+        OutputTextBox.Text = !hasSelection
+            ? string.Empty
+            : IsJsonMode
+                ? ProxyBatchParser.ExportToJson(target)
+                : ProxyBatchParser.ExportToUriLines(target);
+
+        SummaryTextBlock.Text = $"已选 {checkedCount} / {_allItems.Count} 个节点";
+        PreviewFormatBadgeText.Text = IsJsonMode ? "JSON 配置" : "URI 列表";
+        PreviewCountText.Text = $"{checkedCount} 项";
+        CopyButton.Content = hasSelection ? $"复制到剪贴板 ({checkedCount})" : "复制到剪贴板";
+        CopyButton.IsEnabled = hasSelection;
+        SaveFileButton.IsEnabled = hasSelection;
+        EmptySelectionHintText.Visibility = hasSelection ? Visibility.Collapsed : Visibility.Visible;
+
         if (FeedbackBorder is not null)
         {
             FeedbackBorder.Visibility = Visibility.Collapsed;
@@ -73,13 +223,15 @@ public partial class ProxyBatchExportDialog : FluentWindow
 
     private void OnCopyClipboardClick(object sender, RoutedEventArgs e)
     {
+        List<ProxyProfile> selected = SelectedProxies;
+        if (selected.Count == 0) return;
+
         string content = OutputTextBox.Text ?? string.Empty;
-        int count = ActiveProxies.Count;
         string formatLabel = IsJsonMode ? "JSON" : "URI";
 
         if (ClipboardHelper.TrySetText(content, out string? error))
         {
-            string msg = $"已复制 {count} 个代理节点 ({formatLabel}) 到剪贴板";
+            string msg = $"已复制 {selected.Count} 个代理节点 ({formatLabel}) 到剪贴板";
             LastStatusMessage = msg;
             ShowFeedback(msg, isError: false);
         }
@@ -90,7 +242,7 @@ public partial class ProxyBatchExportDialog : FluentWindow
             ShowFeedback(msg, isError: true);
             System.Windows.MessageBox.Show(
                 this,
-                $"未能写入系统剪贴板（{error}）。\n\n您可以在上方预览框中全选 (Ctrl+A) 后手动复制 (Ctrl+C)，或点击“保存为文件”。",
+                $"未能写入系统剪贴板（{error}）。\n\n您可以在右侧预览框中全选 (Ctrl+A) 后手动复制 (Ctrl+C)，或点击“保存为文件”。",
                 "导出代理节点",
                 System.Windows.MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -99,6 +251,9 @@ public partial class ProxyBatchExportDialog : FluentWindow
 
     private void OnSaveFileClick(object sender, RoutedEventArgs e)
     {
+        List<ProxyProfile> selected = SelectedProxies;
+        if (selected.Count == 0) return;
+
         bool isJson = IsJsonMode;
         string ext = isJson ? ".json" : ".txt";
         var dlg = new SaveFileDialog
@@ -119,7 +274,7 @@ public partial class ProxyBatchExportDialog : FluentWindow
         try
         {
             File.WriteAllText(dlg.FileName, OutputTextBox.Text ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            string msg = $"已保存 {ActiveProxies.Count} 个代理节点到 {Path.GetFileName(dlg.FileName)}";
+            string msg = $"已保存 {selected.Count} 个代理节点到 {Path.GetFileName(dlg.FileName)}";
             LastStatusMessage = msg;
             ShowFeedback(msg, isError: false);
         }

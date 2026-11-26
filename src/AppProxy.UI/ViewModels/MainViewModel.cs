@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -47,6 +49,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public ICollectionView FilteredApps { get; }
     public ICollectionView FilteredProxies { get; }
     public ICollectionView FilteredConnections { get; }
+    public ICollectionView FilteredProcessEvents { get; }
 
     public string ConfigFilePath => _configService.ConfigPath;
     public string DataDirectoryPath => AppPaths.GetDataDirectory();
@@ -107,10 +110,40 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _outboundNetworkSummary = string.Empty;
 
     [ObservableProperty]
+    private string _outboundStatusLevel = "Ok";
+
+    [ObservableProperty]
+    private string _outboundHeadline = "物理出口自动探测中...";
+
+    [ObservableProperty]
+    private string _outboundShortStatus = "自动探测";
+
+    [ObservableProperty]
+    private string _outboundTunBadgeText = "当前未检测到活跃 TUN";
+
+    [ObservableProperty]
+    private bool _hasActiveTun;
+
+    [ObservableProperty]
     private string _xrayCorePath = string.Empty;
 
     [ObservableProperty]
     private bool _isXrayCoreAvailable;
+
+    [ObservableProperty]
+    private string _xrayCoreState = "Unconfigured";
+
+    [ObservableProperty]
+    private string _xrayCoreVersionShort = "未配置";
+
+    [ObservableProperty]
+    private string _xrayCoreBadgeText = "未配置";
+
+    [ObservableProperty]
+    private string _xrayCoreHeadline = "未配置 Xray-core（仅开放原生 SOCKS5 / HTTP / HTTPS）";
+
+    [ObservableProperty]
+    private string _xrayCoreDetailText = string.Empty;
 
     [ObservableProperty]
     private string _xrayCoreStatusText = "未配置 Xray-core（仅开放原生 SOCKS5 / HTTP / HTTPS）";
@@ -125,6 +158,97 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private double _xrayDownloadProgressPercent;
 
     private CancellationTokenSource? _xrayDownloadCts;
+    private bool _isSyncingSelectionState;
+
+    [ObservableProperty]
+    private string _proxyProtocolFilter = "All";
+
+    [ObservableProperty]
+    private string _proxySortMode = "Default";
+
+    [ObservableProperty]
+    private int _filteredProxyCount;
+
+    [ObservableProperty]
+    private bool _hasActiveProxyFilter;
+
+    [ObservableProperty]
+    private bool _showProxyFilterEmptyState;
+
+    [ObservableProperty]
+    private int _selectedProxyCount;
+
+    [ObservableProperty]
+    private bool _hasSelectedProxies;
+
+    [ObservableProperty]
+    private string _exportProxyButtonText = "导出";
+
+    [ObservableProperty]
+    private bool _areAllVisibleProxiesSelected;
+
+    [ObservableProperty]
+    private int _availableProxyCount;
+
+    [ObservableProperty]
+    private int _testedProxyCount;
+
+    [ObservableProperty]
+    private int _exitDetectedProxyCount;
+
+    [ObservableProperty]
+    private string _proxyLatencySummaryText = "尚未测速";
+
+    [ObservableProperty]
+    private string _proxyProtocolBreakdownText = "暂无节点";
+
+    [ObservableProperty]
+    private string _proxyPageSubtitle = "管理 SOCKS5 / HTTP / HTTPS 上游代理节点，测试握手延迟、识别出口 IP 并支持勾选导出";
+
+    [ObservableProperty]
+    private string _appBindingFilter = "All";
+
+    [ObservableProperty]
+    private string _appArchFilter = "All";
+
+    [ObservableProperty]
+    private int _filteredAppCount;
+
+    [ObservableProperty]
+    private bool _hasActiveAppFilter;
+
+    [ObservableProperty]
+    private bool _showAppFilterEmptyState;
+
+    [ObservableProperty]
+    private int _boundProxyAppsCount;
+
+    [ObservableProperty]
+    private int _directAppsCount;
+
+    [ObservableProperty]
+    private int _isolatedAppsCount;
+
+    [ObservableProperty]
+    private int _fakeIpAppsCount;
+
+    [ObservableProperty]
+    private string _appArchBreakdownText = "暂无应用";
+
+    [ObservableProperty]
+    private string _appBindingSummaryText = "0 已绑定 · 0 直连";
+
+    [ObservableProperty]
+    private string _appPolicySummaryText = "0 Fake-IP · 0 独立目录";
+
+    [ObservableProperty]
+    private string _connectionStatusFilter = "All";
+
+    [ObservableProperty]
+    private string _eventCategoryFilter = "All";
+
+    [ObservableProperty]
+    private bool _hasActiveMonitorFilter;
 
     public MainViewModel()
     {
@@ -150,14 +274,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         foreach (var proxy in _config.Proxies)
         {
+            proxy.PropertyChanged += OnProxyItemPropertyChanged;
             Proxies.Add(proxy);
         }
+        Proxies.CollectionChanged += OnProxiesCollectionChanged;
 
         foreach (var app in _config.Apps)
         {
             HydrateAppMetadata(app);
             Apps.Add(app);
         }
+        Apps.CollectionChanged += (_, _) => RefreshAppStats();
 
         FilteredApps = CollectionViewSource.GetDefaultView(Apps);
         FilteredApps.Filter = FilterAppPredicate;
@@ -168,6 +295,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         FilteredConnections = CollectionViewSource.GetDefaultView(Connections);
         FilteredConnections.Filter = FilterConnectionPredicate;
 
+        FilteredProcessEvents = CollectionViewSource.GetDefaultView(ProcessEvents);
+        FilteredProcessEvents.Filter = FilterProcessEventPredicate;
+
+        UpdateProxyPageSubtitle();
+        RefreshAppStats();
+        RefreshProxyStatsAndSelection();
         RefreshBridgeSummary();
 
         _uiFlushTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -179,9 +312,36 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _isInitializing = false;
     }
 
-    partial void OnAppSearchTextChanged(string value) => FilteredApps.Refresh();
-    partial void OnProxySearchTextChanged(string value) => FilteredProxies.Refresh();
-    partial void OnConnectionSearchTextChanged(string value) => FilteredConnections.Refresh();
+    partial void OnAppSearchTextChanged(string value) => ApplyAppFilter();
+    partial void OnAppBindingFilterChanged(string value) => ApplyAppFilter();
+    partial void OnAppArchFilterChanged(string value) => ApplyAppFilter();
+    partial void OnProxySearchTextChanged(string value) => ApplyProxyFilterAndSort();
+    partial void OnProxyProtocolFilterChanged(string value) => ApplyProxyFilterAndSort();
+    partial void OnProxySortModeChanged(string value) => ApplyProxyFilterAndSort();
+    partial void OnIsXrayCoreAvailableChanged(bool value) => UpdateProxyPageSubtitle();
+    partial void OnConnectionSearchTextChanged(string value) => ApplyMonitorFilters();
+    partial void OnConnectionStatusFilterChanged(string value) => ApplyMonitorFilters();
+    partial void OnEventCategoryFilterChanged(string value) => ApplyMonitorFilters();
+
+    partial void OnAreAllVisibleProxiesSelectedChanged(bool value)
+    {
+        if (_isSyncingSelectionState) return;
+
+        _isSyncingSelectionState = true;
+        try
+        {
+            foreach (ProxyProfile proxy in FilteredProxies.Cast<ProxyProfile>().ToList())
+            {
+                proxy.IsSelected = value;
+            }
+        }
+        finally
+        {
+            _isSyncingSelectionState = false;
+        }
+
+        RefreshProxyStatsAndSelection();
+    }
 
     partial void OnBypassGlobalTunChanged(bool value)
     {
@@ -291,14 +451,89 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private bool FilterAppPredicate(object obj)
     {
         if (obj is not AppProfile app) return false;
+
+        if (string.Equals(AppBindingFilter, "Proxied", StringComparison.OrdinalIgnoreCase) && app.ProxyProfileId is null)
+        {
+            return false;
+        }
+        if (string.Equals(AppBindingFilter, "Direct", StringComparison.OrdinalIgnoreCase) && app.ProxyProfileId is not null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(AppArchFilter, "All", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(app.DetectedArch, AppArchFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(AppSearchText)) return true;
         return app.Name.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase) ||
-               app.ExePath.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase);
+               app.ExePath.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase) ||
+               app.BoundProxyName.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase) ||
+               app.DetectedArch.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ApplyAppFilter()
+    {
+        FilteredApps.Refresh();
+        RefreshAppStats();
+    }
+
+    private void RefreshAppStats()
+    {
+        var all = Apps.ToList();
+        int total = all.Count;
+        int visibleCount = FilteredApps.Cast<object>().Count();
+
+        bool activeFilter = !string.IsNullOrWhiteSpace(AppSearchText) ||
+                            !string.Equals(AppBindingFilter, "All", StringComparison.OrdinalIgnoreCase) ||
+                            !string.Equals(AppArchFilter, "All", StringComparison.OrdinalIgnoreCase);
+
+        FilteredAppCount = visibleCount;
+        HasActiveAppFilter = activeFilter;
+        ShowAppFilterEmptyState = total > 0 && visibleCount == 0;
+
+        int bound = all.Count(a => a.ProxyProfileId is not null);
+        int direct = total - bound;
+        int isolated = all.Count(a => a.EffectiveIsolateProfileDir);
+        int fakeIp = all.Count(a => a.RemoteDns);
+        int x64Count = all.Count(a => string.Equals(a.DetectedArch, "x64", StringComparison.OrdinalIgnoreCase));
+        int x86Count = all.Count(a => string.Equals(a.DetectedArch, "x86", StringComparison.OrdinalIgnoreCase));
+
+        BoundProxyAppsCount = bound;
+        DirectAppsCount = direct;
+        IsolatedAppsCount = isolated;
+        FakeIpAppsCount = fakeIp;
+        AppBindingSummaryText = $"{bound} 已绑定 · {direct} 直连";
+        AppPolicySummaryText = $"{fakeIp} Fake-IP · {isolated} 独立目录";
+
+        if (total == 0)
+        {
+            AppArchBreakdownText = "暂无应用";
+        }
+        else
+        {
+            var archParts = new List<string>(2);
+            if (x64Count > 0) archParts.Add($"x64 {x64Count}");
+            if (x86Count > 0) archParts.Add($"x86 {x86Count}");
+            AppArchBreakdownText = archParts.Count > 0 ? string.Join(" · ", archParts) : $"{total} 个应用";
+        }
     }
 
     private bool FilterProxyPredicate(object obj)
     {
         if (obj is not ProxyProfile proxy) return false;
+
+        if (!string.Equals(ProxyProtocolFilter, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Enum.TryParse<ProxyProtocol>(ProxyProtocolFilter, ignoreCase: true, out var requiredProto) ||
+                proxy.Protocol != requiredProto)
+            {
+                return false;
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(ProxySearchText)) return true;
         return proxy.Name.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
                proxy.Host.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase) ||
@@ -312,14 +547,255 @@ public partial class MainViewModel : ObservableObject, IDisposable
                proxy.ExitIsp.Contains(ProxySearchText, StringComparison.OrdinalIgnoreCase);
     }
 
+    private void OnProxiesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (ProxyProfile oldItem in e.OldItems.OfType<ProxyProfile>())
+            {
+                oldItem.PropertyChanged -= OnProxyItemPropertyChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (ProxyProfile newItem in e.NewItems.OfType<ProxyProfile>())
+            {
+                newItem.PropertyChanged += OnProxyItemPropertyChanged;
+            }
+        }
+
+        RefreshProxyStatsAndSelection();
+    }
+
+    private void OnProxyItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProxyProfile.IsSelected) && _isSyncingSelectionState)
+        {
+            return;
+        }
+
+        if (e.PropertyName is not (
+            nameof(ProxyProfile.IsSelected) or
+            nameof(ProxyProfile.LastLatencyMs) or
+            nameof(ProxyProfile.LastTestStatus) or
+            nameof(ProxyProfile.IsTesting) or
+            nameof(ProxyProfile.ExitIp) or
+            nameof(ProxyProfile.Protocol)))
+        {
+            return;
+        }
+
+        Dispatcher? dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            _ = dispatcher.BeginInvoke(() => RefreshProxyStatsAndSelection());
+            return;
+        }
+
+        RefreshProxyStatsAndSelection();
+    }
+
+    private void ApplyProxyFilterAndSort()
+    {
+        if (FilteredProxies is ListCollectionView lcv)
+        {
+            lcv.CustomSort = ProxySortMode switch
+            {
+                "Latency" => ProxyLatencyComparer.Instance,
+                "Name" => ProxyNameComparer.Instance,
+                _ => null
+            };
+        }
+
+        FilteredProxies.Refresh();
+        RefreshProxyStatsAndSelection();
+    }
+
+    private void UpdateProxyPageSubtitle()
+    {
+        ProxyPageSubtitle = IsXrayCoreAvailable
+            ? "管理 SOCKS5 / HTTP / HTTPS / VLESS 上游代理节点，测试握手延迟、识别出口 IP 并支持勾选导出"
+            : "管理 SOCKS5 / HTTP / HTTPS 上游代理节点，测试握手延迟、识别出口 IP 并支持勾选导出";
+    }
+
+    private void RefreshProxyStatsAndSelection()
+    {
+        var all = Proxies.ToList();
+        int total = all.Count;
+
+        var visible = FilteredProxies.Cast<ProxyProfile>().ToList();
+        int visibleCount = visible.Count;
+
+        bool activeFilter = !string.IsNullOrWhiteSpace(ProxySearchText) ||
+                            !string.Equals(ProxyProtocolFilter, "All", StringComparison.OrdinalIgnoreCase);
+
+        FilteredProxyCount = visibleCount;
+        HasActiveProxyFilter = activeFilter;
+        ShowProxyFilterEmptyState = total > 0 && visibleCount == 0;
+
+        int selectedCount = all.Count(p => p.IsSelected);
+        SelectedProxyCount = selectedCount;
+        HasSelectedProxies = selectedCount > 0;
+
+        ExportProxyButtonText = selectedCount > 0
+            ? $"导出 ({selectedCount})"
+            : activeFilter && visibleCount != total
+                ? $"导出筛选 ({visibleCount})"
+                : "导出";
+
+        bool allVisibleSelected = visibleCount > 0 && visible.All(p => p.IsSelected);
+        if (AreAllVisibleProxiesSelected != allVisibleSelected)
+        {
+            _isSyncingSelectionState = true;
+            try
+            {
+                AreAllVisibleProxiesSelected = allVisibleSelected;
+            }
+            finally
+            {
+                _isSyncingSelectionState = false;
+            }
+        }
+
+        int available = all.Count(p => p.LastLatencyMs.HasValue);
+        int tested = all.Count(p =>
+            p.LastLatencyMs.HasValue ||
+            !string.Equals(p.LastTestStatus, "Untested", StringComparison.OrdinalIgnoreCase));
+        int exitDetected = all.Count(p => !string.IsNullOrWhiteSpace(p.ExitIp));
+
+        AvailableProxyCount = available;
+        TestedProxyCount = tested;
+        ExitDetectedProxyCount = exitDetected;
+
+        if (total == 0)
+        {
+            ProxyLatencySummaryText = "暂无节点";
+            ProxyProtocolBreakdownText = "暂无节点";
+        }
+        else
+        {
+            if (tested == 0)
+            {
+                ProxyLatencySummaryText = "尚未测速";
+            }
+            else if (available == 0)
+            {
+                ProxyLatencySummaryText = $"0 / {total} 可用";
+            }
+            else
+            {
+                int minMs = all.Where(p => p.LastLatencyMs.HasValue).Min(p => p.LastLatencyMs!.Value);
+                ProxyLatencySummaryText = $"{available} / {total} 可用 · 最快 {minMs} ms";
+            }
+
+            var protoCounts = new List<string>(4);
+            void AppendProtoCount(ProxyProtocol proto, string label)
+            {
+                int cnt = all.Count(p => p.Protocol == proto);
+                if (cnt > 0) protoCounts.Add($"{label} {cnt}");
+            }
+
+            AppendProtoCount(ProxyProtocol.Socks5, "SOCKS5");
+            AppendProtoCount(ProxyProtocol.Http, "HTTP");
+            AppendProtoCount(ProxyProtocol.Https, "HTTPS");
+            AppendProtoCount(ProxyProtocol.Vless, "VLESS");
+            ProxyProtocolBreakdownText = protoCounts.Count > 0 ? string.Join(" · ", protoCounts) : "暂无节点";
+        }
+    }
+
+    private sealed class ProxyLatencyComparer : IComparer
+    {
+        public static readonly ProxyLatencyComparer Instance = new();
+
+        public int Compare(object? x, object? y)
+        {
+            if (x is not ProxyProfile a || y is not ProxyProfile b) return 0;
+
+            if (a.LastLatencyMs.HasValue && b.LastLatencyMs.HasValue)
+            {
+                int msCmp = a.LastLatencyMs.Value.CompareTo(b.LastLatencyMs.Value);
+                return msCmp != 0 ? msCmp : string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase);
+            }
+
+            if (a.LastLatencyMs.HasValue != b.LastLatencyMs.HasValue)
+            {
+                return a.LastLatencyMs.HasValue ? -1 : 1;
+            }
+
+            int rankA = string.Equals(a.LastTestStatus, "Untested", StringComparison.OrdinalIgnoreCase) ? 1 : 2;
+            int rankB = string.Equals(b.LastTestStatus, "Untested", StringComparison.OrdinalIgnoreCase) ? 1 : 2;
+            if (rankA != rankB) return rankA.CompareTo(rankB);
+
+            return string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase);
+        }
+    }
+
+    private sealed class ProxyNameComparer : IComparer
+    {
+        public static readonly ProxyNameComparer Instance = new();
+
+        public int Compare(object? x, object? y)
+        {
+            if (x is not ProxyProfile a || y is not ProxyProfile b) return 0;
+            int nameCmp = string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase);
+            return nameCmp != 0 ? nameCmp : string.Compare(a.EndpointDisplay, b.EndpointDisplay, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private bool FilterConnectionPredicate(object obj)
     {
         if (obj is not ConnectionRecord conn) return false;
+
+        if (!string.Equals(ConnectionStatusFilter, "All", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(conn.Status, ConnectionStatusFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(ConnectionSearchText)) return true;
         return conn.ProcessName.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
                conn.TargetDisplay.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               conn.FakeIp.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
                conn.ProxyName.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
-               conn.Status.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase);
+               conn.Protocol.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               conn.Status.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               conn.ErrorMessage.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool FilterProcessEventPredicate(object obj)
+    {
+        if (obj is not ProcessEventRecord ev) return false;
+
+        if (!string.Equals(EventCategoryFilter, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            bool categoryMatch = EventCategoryFilter switch
+            {
+                "Injection" => ev.EventType is "Launched" or "Injected" or "HookInit" or "ChildSpawned",
+                "Network" => ev.EventType is "ConnectRedirect" or "NetworkChanged" or "XrayCore",
+                "Dns" => ev.EventType is "DnsResolved" or "DnsFakeIp",
+                "Issue" => ev.EventType is "Warning" or "JobCleanup" or "Error",
+                _ => true
+            };
+            if (!categoryMatch) return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(ConnectionSearchText)) return true;
+        return ev.EventType.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               ev.ProcessName.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               ev.Arch.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               ev.Message.Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase) ||
+               ev.Pid.ToString().Contains(ConnectionSearchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ApplyMonitorFilters()
+    {
+        HasActiveMonitorFilter =
+            !string.IsNullOrWhiteSpace(ConnectionSearchText) ||
+            !string.Equals(ConnectionStatusFilter, "All", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(EventCategoryFilter, "All", StringComparison.OrdinalIgnoreCase);
+        FilteredConnections.Refresh();
+        FilteredProcessEvents.Refresh();
     }
 
     internal void EnqueueConnectionUpsert(BridgeConnectionDto dto) =>
@@ -410,10 +886,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (app.ProxyProfileId is null)
         {
             app.BoundProxyName = "Direct";
-            return;
         }
-        var found = Proxies.FirstOrDefault(p => p.Id == app.ProxyProfileId);
-        app.BoundProxyName = found?.Name ?? "Direct";
+        else
+        {
+            var found = Proxies.FirstOrDefault(p => p.Id == app.ProxyProfileId);
+            app.BoundProxyName = found?.Name ?? "Direct";
+        }
+
+        if (!_isInitializing)
+        {
+            RefreshAppStats();
+        }
     }
 
     public void AddOrUpdateApp(AppProfile edited)
@@ -430,6 +913,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Apps.Add(edited);
         }
         SaveConfiguration();
+        RefreshAppStats();
         StatusMessage = $"Saved application: {edited.Name}";
     }
 
@@ -520,6 +1004,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var existing = Proxies.FirstOrDefault(p => p.Id == edited.Id);
         if (existing is not null)
         {
+            edited.IsSelected = existing.IsSelected;
             int idx = Proxies.IndexOf(existing);
             Proxies[idx] = edited;
         }
@@ -689,10 +1174,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (info is not null)
         {
             SaveConfiguration();
-            if (!string.IsNullOrWhiteSpace(ProxySearchText))
+            if (HasActiveProxyFilter)
             {
                 FilteredProxies.Refresh();
             }
+            RefreshProxyStatsAndSelection();
             StatusMessage = $"{proxy.Name} 落地出口: {proxy.ExitBadgeText}";
         }
         else
@@ -702,16 +1188,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task DetectAllProxiesExitIpAsync()
+    private Task DetectAllProxiesExitIpAsync() =>
+        DetectProxyExitIpBatchAsync(Proxies.ToList(), "全部");
+
+    [RelayCommand]
+    private Task DetectSelectedProxiesExitIpAsync()
     {
-        if (Proxies.Count == 0) return;
+        var selected = GetSelectedProxies();
+        return selected.Count == 0
+            ? Task.CompletedTask
+            : DetectProxyExitIpBatchAsync(selected, "选中");
+    }
+
+    private async Task DetectProxyExitIpBatchAsync(IReadOnlyList<ProxyProfile> list, string scopeLabel)
+    {
+        if (list.Count == 0) return;
 
         string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
         using var gate = new SemaphoreSlim(4, 4);
         int succeeded = 0;
-        var list = Proxies.ToList();
 
         XraySidecarSession? batchSidecar = null;
         try
@@ -769,12 +1266,123 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (succeeded > 0)
         {
             SaveConfiguration();
-            if (!string.IsNullOrWhiteSpace(ProxySearchText))
+            if (HasActiveProxyFilter)
             {
                 FilteredProxies.Refresh();
             }
         }
-        StatusMessage = $"全部出口检测完成: {succeeded}/{list.Count} 个节点成功识别";
+        RefreshProxyStatsAndSelection();
+        StatusMessage = $"{scopeLabel}出口检测完成: {succeeded}/{list.Count} 个节点成功识别";
+    }
+
+    public List<ProxyProfile> GetSelectedProxies() =>
+        Proxies.Where(p => p.IsSelected).ToList();
+
+    public List<Guid> GetSelectedProxyIds() =>
+        Proxies.Where(p => p.IsSelected).Select(p => p.Id).ToList();
+
+    [RelayCommand]
+    private void ClearProxySelection()
+    {
+        _isSyncingSelectionState = true;
+        try
+        {
+            foreach (ProxyProfile proxy in Proxies)
+            {
+                proxy.IsSelected = false;
+            }
+        }
+        finally
+        {
+            _isSyncingSelectionState = false;
+        }
+        RefreshProxyStatsAndSelection();
+    }
+
+    [RelayCommand]
+    private void ResetProxyFilters()
+    {
+        ProxySearchText = string.Empty;
+        ProxyProtocolFilter = "All";
+        ProxySortMode = "Default";
+    }
+
+    [RelayCommand]
+    private void OpenProxiesPage()
+    {
+        SelectedNavIndex = 1;
+    }
+
+    [RelayCommand]
+    private void OpenMonitorPage()
+    {
+        SelectedNavIndex = 2;
+    }
+
+    [RelayCommand]
+    private void OpenSettingsPage()
+    {
+        SelectedNavIndex = 3;
+    }
+
+    [RelayCommand]
+    private void ResetAppFilters()
+    {
+        AppSearchText = string.Empty;
+        AppBindingFilter = "All";
+        AppArchFilter = "All";
+    }
+
+    [RelayCommand]
+    private void ResetMonitorFilters()
+    {
+        ConnectionSearchText = string.Empty;
+        ConnectionStatusFilter = "All";
+        EventCategoryFilter = "All";
+    }
+
+    [RelayCommand]
+    private void CopySingleProxyUri(ProxyProfile? proxy)
+    {
+        if (proxy is null) return;
+        string uri = ProxyBatchParser.ExportSingleUri(proxy);
+        if (ClipboardHelper.TrySetText(uri, out string? error))
+        {
+            StatusMessage = $"已复制节点链接: {proxy.Name}";
+        }
+        else
+        {
+            StatusMessage = $"复制节点链接失败: {error}";
+            System.Windows.MessageBox.Show(
+                $"未能写入系统剪贴板（{error}）。",
+                "复制节点链接",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    public int DeleteSelectedProxies()
+    {
+        var selected = GetSelectedProxies();
+        if (selected.Count == 0) return 0;
+
+        var removedIds = selected.Select(p => p.Id).ToHashSet();
+        foreach (ProxyProfile proxy in selected)
+        {
+            proxy.IsSelected = false;
+            Proxies.Remove(proxy);
+        }
+
+        foreach (AppProfile app in Apps.Where(a => a.ProxyProfileId.HasValue && removedIds.Contains(a.ProxyProfileId.Value)))
+        {
+            app.ProxyProfileId = null;
+            SyncAppBoundProxyName(app);
+        }
+
+        SaveConfiguration();
+        RefreshProxyStatsAndSelection();
+        StatusMessage = $"已删除 {selected.Count} 个选中代理节点";
+        return selected.Count;
     }
 
     [RelayCommand]
@@ -806,16 +1414,34 @@ public partial class MainViewModel : ObservableObject, IDisposable
             BypassGlobalTun,
             preferredNic,
             XrayCorePath);
+        if (string.Equals(ProxySortMode, "Latency", StringComparison.Ordinal))
+        {
+            FilteredProxies.Refresh();
+        }
+        RefreshProxyStatsAndSelection();
         StatusMessage = $"Tested {proxy.Name}: {proxy.LatencyDisplay}";
     }
 
     [RelayCommand]
-    private async Task TestAllProxiesAsync()
+    private Task TestAllProxiesAsync() =>
+        TestProxyBatchAsync(Proxies.ToList(), "全部");
+
+    [RelayCommand]
+    private Task TestSelectedProxiesAsync()
     {
+        var selected = GetSelectedProxies();
+        return selected.Count == 0
+            ? Task.CompletedTask
+            : TestProxyBatchAsync(selected, "选中");
+    }
+
+    private async Task TestProxyBatchAsync(IReadOnlyList<ProxyProfile> list, string scopeLabel)
+    {
+        if (list.Count == 0) return;
+
         string? preferredNic = string.IsNullOrWhiteSpace(PreferredOutboundInterface)
             ? null
             : PreferredOutboundInterface;
-        var list = Proxies.ToList();
         XraySidecarSession? batchSidecar = null;
         try
         {
@@ -853,7 +1479,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             batchSidecar?.Dispose();
         }
-        StatusMessage = "Finished testing all proxies.";
+
+        if (string.Equals(ProxySortMode, "Latency", StringComparison.Ordinal))
+        {
+            FilteredProxies.Refresh();
+        }
+        RefreshProxyStatsAndSelection();
+        StatusMessage = $"已完成{scopeLabel} {list.Count} 个代理节点测速";
     }
 
     [RelayCommand]
@@ -960,12 +1592,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void UpdateOutboundNetworkSummary()
     {
         IReadOnlyList<string> activeTuns = PhysicalNetworkSelector.GetActiveTunAdapterNames();
-        string tunNote = activeTuns.Count > 0
-            ? $" · 检测到活跃 TUN: {string.Join(", ", activeTuns)}"
-            : " · 当前未检测到活跃 TUN";
+        HasActiveTun = activeTuns.Count > 0;
+        OutboundTunBadgeText = HasActiveTun
+            ? $"检测到活跃 TUN: {string.Join(", ", activeTuns)}"
+            : "当前未检测到活跃 TUN";
+        string tunNote = $" · {OutboundTunBadgeText}";
 
         if (!BypassGlobalTun)
         {
+            OutboundStatusLevel = "Disabled";
+            OutboundShortStatus = "已关闭绕过";
+            OutboundHeadline = "已关闭全局 TUN 隔离，出站流量遵循系统默认路由";
             OutboundNetworkSummary = $"已关闭 TUN 绕过，出站流量遵循系统默认路由{tunNote}";
             return;
         }
@@ -976,41 +1613,92 @@ public partial class MainViewModel : ObservableObject, IDisposable
         OutboundInterfaceInfo? selected = PhysicalNetworkSelector.ResolveBestOutboundInterface(preferredNic);
         if (selected is null)
         {
-            OutboundNetworkSummary = $"暂未检测到可用物理出口网卡，将使用系统默认路由{tunNote}";
+            OutboundStatusLevel = "Warning";
+            OutboundShortStatus = "默认路由回退";
+            OutboundHeadline = "暂未检测到可用物理出口网卡，将使用系统默认路由";
+            OutboundNetworkSummary = $"{OutboundHeadline}{tunNote}";
         }
         else if (!string.IsNullOrEmpty(preferredNic) &&
                  !string.Equals(selected.Id, preferredNic, StringComparison.OrdinalIgnoreCase))
         {
+            OutboundStatusLevel = "Warning";
+            OutboundShortStatus = "已故障转移";
+            OutboundHeadline = $"指定网卡离线，已自动故障转移至: {selected.DisplaySummary}";
             OutboundNetworkSummary = $"指定网卡当前离线，已自动故障转移至: {selected.DisplaySummary}{tunNote}";
         }
         else
         {
-            OutboundNetworkSummary = $"当前物理出口: {selected.DisplaySummary}{tunNote}";
+            OutboundStatusLevel = "Ok";
+            OutboundShortStatus = "物理网卡直连";
+            OutboundHeadline = $"当前物理出口: {selected.DisplaySummary}";
+            OutboundNetworkSummary = $"{OutboundHeadline}{tunNote}";
         }
+    }
+
+    internal static string ExtractShortXrayVersion(string? versionLine)
+    {
+        if (string.IsNullOrWhiteSpace(versionLine)) return string.Empty;
+        string[] tokens = versionLine.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string token in tokens)
+        {
+            string trimmed = token.TrimStart('v', 'V');
+            if (trimmed.Length >= 3 && char.IsDigit(trimmed[0]) && trimmed.Contains('.'))
+            {
+                return $"v{trimmed}";
+            }
+        }
+        return string.Empty;
     }
 
     [RelayCommand]
     private async Task RefreshXrayCoreStatusAsync()
     {
+        string defaultPath = AppPaths.GetDefaultXrayExePath();
         string? resolved = XrayCoreManager.ResolveXrayPath(XrayCorePath);
         if (resolved is null)
         {
             IsXrayCoreAvailable = false;
-            XrayCoreStatusText = string.IsNullOrWhiteSpace(XrayCorePath)
-                ? $"未检测到 Xray-core（默认路径 {AppPaths.GetDefaultXrayExePath()} 不存在），当前仅开放原生 SOCKS5 / HTTP / HTTPS"
-                : $"指定路径不存在 xray.exe: {XrayCorePath}，当前仅开放原生 SOCKS5 / HTTP / HTTPS";
+            if (string.IsNullOrWhiteSpace(XrayCorePath))
+            {
+                XrayCoreState = "Unconfigured";
+                XrayCoreVersionShort = "未配置";
+                XrayCoreBadgeText = "未配置";
+                XrayCoreHeadline = "未配置 Xray-core 内核（当前仅开放原生 SOCKS5 / HTTP / HTTPS）";
+                XrayCoreDetailText = $"默认内核路径: {defaultPath}（点击上方「一键下载」或浏览指定 xray.exe 后可解锁 VLESS / REALITY）";
+                XrayCoreStatusText = $"未检测到 Xray-core（默认路径 {defaultPath} 不存在），当前仅开放原生 SOCKS5 / HTTP / HTTPS";
+            }
+            else
+            {
+                XrayCoreState = "Error";
+                XrayCoreVersionShort = "路径无效";
+                XrayCoreBadgeText = "路径无效";
+                XrayCoreHeadline = "指定的 xray.exe 路径不存在（当前仅开放原生 SOCKS5 / HTTP / HTTPS）";
+                XrayCoreDetailText = $"当前配置路径: {XrayCorePath}";
+                XrayCoreStatusText = $"指定路径不存在 xray.exe: {XrayCorePath}，当前仅开放原生 SOCKS5 / HTTP / HTTPS";
+            }
             return;
         }
 
         string? version = await XrayCoreManager.DetectVersionAsync(resolved);
         if (!string.IsNullOrWhiteSpace(version))
         {
+            string shortVer = ExtractShortXrayVersion(version);
             IsXrayCoreAvailable = true;
+            XrayCoreState = "Ready";
+            XrayCoreVersionShort = string.IsNullOrEmpty(shortVer) ? "已就绪" : shortVer;
+            XrayCoreBadgeText = string.IsNullOrEmpty(shortVer) ? "✓ 已就绪" : $"✓ 已就绪 · {shortVer}";
+            XrayCoreHeadline = $"Xray-core 内核已就绪 · {version}";
+            XrayCoreDetailText = $"路径: {resolved}";
             XrayCoreStatusText = $"已就绪 · {version} ({resolved})";
         }
         else
         {
             IsXrayCoreAvailable = false;
+            XrayCoreState = "Error";
+            XrayCoreVersionShort = "运行异常";
+            XrayCoreBadgeText = "校验失败";
+            XrayCoreHeadline = "无法识别或执行 xray.exe（请检查文件完整性）";
+            XrayCoreDetailText = $"目标路径: {resolved}";
             XrayCoreStatusText = $"无法识别或运行 xray.exe: {resolved}";
         }
     }

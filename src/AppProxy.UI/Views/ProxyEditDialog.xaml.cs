@@ -1,7 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using AppProxy.Core.Models;
 using AppProxy.Core.Services;
+using AppProxy.UI.Services;
 using Wpf.Ui.Controls;
 
 namespace AppProxy.UI.Views;
@@ -9,6 +13,8 @@ namespace AppProxy.UI.Views;
 public partial class ProxyEditDialog : FluentWindow
 {
     private readonly bool _xrayAvailable;
+    private readonly bool _allowVlessOption;
+    private string _vlessHeaderType = "none";
 
     public ProxyProfile ResultProxy { get; private set; }
 
@@ -19,14 +25,16 @@ public partial class ProxyEditDialog : FluentWindow
 
         ResultProxy = existing?.Clone() ?? new ProxyProfile();
 
-        bool allowVlessOption = _xrayAvailable || ResultProxy.Protocol == ProxyProtocol.Vless;
-        if (!allowVlessOption)
+        _allowVlessOption = _xrayAvailable || ResultProxy.Protocol == ProxyProtocol.Vless;
+        if (!_allowVlessOption)
         {
             ProtocolCombo.Items.Remove(VlessProtocolItem);
+            QuickFillHintText.Text = "支持 socks5:// · http(s):// · host:port:user:pass · user:pass@host:port · 单节点 JSON（配置 Xray-core 后解锁 vless://）";
         }
         else
         {
             BannerSubtitleText.Text = "支持 SOCKS5、HTTP CONNECT、HTTPS TLS 与 VLESS (Xray-core) 隧道转发";
+            QuickFillHintText.Text = "支持 socks5:// · http(s):// · vless:// · host:port:user:pass · user:pass@host:port · 单节点 JSON";
         }
 
         if (ResultProxy.Protocol == ProxyProtocol.Vless && !_xrayAvailable)
@@ -42,6 +50,7 @@ public partial class ProxyEditDialog : FluentWindow
         }
 
         PopulateFieldsFromProfile(ResultProxy);
+        DataObject.AddPastingHandler(QuickLinkBox, OnQuickLinkPasting);
 
         if (isCloneMode)
         {
@@ -62,6 +71,7 @@ public partial class ProxyEditDialog : FluentWindow
         PasswordInput.Password = profile.Password;
 
         VlessSettings v = profile.Vless ?? new VlessSettings();
+        _vlessHeaderType = string.IsNullOrWhiteSpace(v.HeaderType) ? "none" : v.HeaderType;
         VlessUuidBox.Text = v.Uuid;
         VlessEncryptionBox.Text = string.IsNullOrWhiteSpace(v.Encryption) ? "none" : v.Encryption;
         VlessFlowCombo.Text = v.Flow;
@@ -144,32 +154,99 @@ public partial class ProxyEditDialog : FluentWindow
         VlessTransportExtraPanel.Visibility = netTag != "tcp" ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void OnPasteVlessUriClick(object sender, RoutedEventArgs e)
+    private void OnQuickLinkPasting(object sender, DataObjectPastingEventArgs e)
     {
-        try
+        Dispatcher.BeginInvoke(() =>
         {
-            if (!Clipboard.ContainsText())
-            {
-                System.Windows.MessageBox.Show(this, "剪贴板中没有文本内容。", "粘贴 VLESS 链接", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
+            ApplyQuickLinkText(QuickLinkBox.Text, fromAutoPaste: true);
+        }, DispatcherPriority.Background);
+    }
 
-            string raw = Clipboard.GetText().Trim();
-            ProxyBatchParseResult parsed = ProxyBatchParser.Parse(raw, ProxyProtocol.Vless, allowXrayProtocols: true);
-            ProxyProfile? vless = parsed.Proxies.FirstOrDefault(p => p.Protocol == ProxyProtocol.Vless);
-            if (vless is null)
-            {
-                string reason = parsed.Errors.FirstOrDefault()?.Reason ?? "未能从剪贴板解析出有效的 vless:// 链接。";
-                System.Windows.MessageBox.Show(this, reason, "粘贴 VLESS 链接", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            PopulateFieldsFromProfile(vless);
-        }
-        catch (Exception ex)
+    private void OnQuickLinkKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
         {
-            System.Windows.MessageBox.Show(this, $"读取剪贴板失败: {ex.Message}", "粘贴 VLESS 链接", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+            e.Handled = true;
+            ApplyQuickLinkText(QuickLinkBox.Text, fromAutoPaste: false);
         }
+    }
+
+    private void OnParseQuickLinkClick(object sender, RoutedEventArgs e)
+    {
+        ApplyQuickLinkText(QuickLinkBox.Text, fromAutoPaste: false);
+    }
+
+    private void OnPasteQuickLinkClick(object sender, RoutedEventArgs e)
+    {
+        if (!ClipboardHelper.TryGetText(out string raw, out string? error))
+        {
+            ShowQuickFillFeedback($"读取剪贴板失败: {error}", isError: true);
+            return;
+        }
+
+        string trimmed = raw.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            ShowQuickFillFeedback("剪贴板中没有文本内容，请先复制代理链接。", isError: true);
+            return;
+        }
+
+        QuickLinkBox.Text = trimmed;
+        ApplyQuickLinkText(trimmed, fromAutoPaste: false);
+    }
+
+    private void ApplyQuickLinkText(string raw, bool fromAutoPaste)
+    {
+        string trimmed = (raw ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            if (!fromAutoPaste)
+            {
+                ShowQuickFillFeedback("请先粘贴或输入单个代理链接。", isError: true);
+            }
+            else if (QuickFillFeedbackBorder is not null)
+            {
+                QuickFillFeedbackBorder.Visibility = Visibility.Collapsed;
+            }
+            return;
+        }
+
+        string tag = (ProtocolCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Socks5";
+        ProxyProtocol defaultProtocol = Enum.TryParse<ProxyProtocol>(tag, out var proto) && proto != ProxyProtocol.Vless
+            ? proto
+            : ProxyProtocol.Socks5;
+
+        if (!ProxyBatchParser.TryParseSingle(
+                trimmed,
+                defaultProtocol,
+                _allowVlessOption,
+                out ProxyProfile? parsed,
+                out string error,
+                out int totalCount) ||
+            parsed is null)
+        {
+            ShowQuickFillFeedback(error, isError: true);
+            return;
+        }
+
+        PopulateFieldsFromProfile(parsed);
+
+        string okMsg = totalCount > 1
+            ? $"✓ 已解析第 1 条链接并填充（{parsed.ProtocolDisplay} · {parsed.Host}:{parsed.Port}）；共检测到 {totalCount} 条，多节点请使用「批量导入」"
+            : $"✓ 已自动填充: {parsed.ProtocolDisplay} · {parsed.Name} ({parsed.Host}:{parsed.Port})";
+        ShowQuickFillFeedback(okMsg, isError: false);
+    }
+
+    private void ShowQuickFillFeedback(string message, bool isError)
+    {
+        QuickFillFeedbackText.Text = message;
+        QuickFillFeedbackBorder.Background = (TryFindResource(isError ? "SemanticErrorBgBrush" : "SemanticSuccessBgBrush") as Brush)
+            ?? (isError ? Brushes.MistyRose : Brushes.Honeydew);
+        QuickFillFeedbackBorder.BorderBrush = (TryFindResource(isError ? "SemanticErrorBorderBrush" : "SemanticSuccessBorderBrush") as Brush)
+            ?? (isError ? Brushes.IndianRed : Brushes.MediumSeaGreen);
+        QuickFillFeedbackText.Foreground = (TryFindResource(isError ? "SemanticErrorBrush" : "SemanticSuccessBrush") as Brush)
+            ?? (isError ? Brushes.Crimson : Brushes.SeaGreen);
+        QuickFillFeedbackBorder.Visibility = Visibility.Visible;
     }
 
     private void OnSave(object sender, RoutedEventArgs e)
@@ -199,7 +276,7 @@ public partial class ProxyEditDialog : FluentWindow
                 Encryption = string.IsNullOrWhiteSpace(VlessEncryptionBox.Text) ? "none" : VlessEncryptionBox.Text.Trim(),
                 Flow = VlessFlowCombo.Text?.Trim() ?? string.Empty,
                 Network = (VlessNetworkCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "tcp",
-                HeaderType = ResultProxy.Vless?.HeaderType ?? "none",
+                HeaderType = _vlessHeaderType,
                 Security = (VlessSecurityCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "reality",
                 Sni = VlessSniBox.Text.Trim(),
                 Fingerprint = VlessFingerprintCombo.Text?.Trim() ?? string.Empty,

@@ -395,6 +395,167 @@ public class ProxyBatchAndExitIpTests
         }
     }
 
+    [Fact]
+    public void TryParseSingle_ParsesStandardVlessPlainJsonAndReportsMultiLineCount()
+    {
+        bool okSocks = ProxyBatchParser.TryParseSingle(
+            "socks5://alice:pass%401@10.0.0.5:1080#NodeOne",
+            ProxyProtocol.Http,
+            allowXrayProtocols: false,
+            out ProxyProfile? socksProxy,
+            out string socksErr,
+            out int socksCount);
+
+        Assert.True(okSocks);
+        Assert.Empty(socksErr);
+        Assert.Equal(1, socksCount);
+        Assert.NotNull(socksProxy);
+        Assert.Equal(ProxyProtocol.Socks5, socksProxy!.Protocol);
+        Assert.Equal("10.0.0.5", socksProxy.Host);
+        Assert.Equal(1080, socksProxy.Port);
+        Assert.Equal("alice", socksProxy.Username);
+        Assert.Equal("pass@1", socksProxy.Password);
+        Assert.Equal("NodeOne", socksProxy.Name);
+
+        bool okPlain = ProxyBatchParser.TryParseSingle(
+            "192.168.1.50:8080:u1:p1",
+            ProxyProtocol.Https,
+            allowXrayProtocols: true,
+            out ProxyProfile? plainProxy,
+            out _,
+            out int plainCount);
+
+        Assert.True(okPlain);
+        Assert.Equal(1, plainCount);
+        Assert.Equal(ProxyProtocol.Https, plainProxy!.Protocol);
+
+        string multi = "socks5://1.1.1.1:1080#A\nhttp://2.2.2.2:8080#B";
+        bool okMulti = ProxyBatchParser.TryParseSingle(
+            multi,
+            ProxyProtocol.Socks5,
+            allowXrayProtocols: true,
+            out ProxyProfile? firstMulti,
+            out _,
+            out int multiCount);
+
+        Assert.True(okMulti);
+        Assert.Equal(2, multiCount);
+        Assert.Equal("A", firstMulti!.Name);
+
+        string vlessUri = "vless://6611d690-5e50-403e-9a90-e1877a69e350@cat.vanitas.top:8443?encryption=none&security=reality&sni=www.hsbc.hk&fp=chrome&pbk=UunraCjhfc38MvRAjw_TdUlEL4_o_nYWxIkYbnMAIV8&sid=7f86960c6a3cfc&spx=%2F150628bbe37dd65&type=tcp&headerType=none#CAT";
+        bool gatedOut = ProxyBatchParser.TryParseSingle(
+            vlessUri,
+            ProxyProtocol.Socks5,
+            allowXrayProtocols: false,
+            out _,
+            out string gatedErr,
+            out _);
+        Assert.False(gatedOut);
+        Assert.Contains("Xray-core", gatedErr);
+
+        bool vlessOk = ProxyBatchParser.TryParseSingle(
+            vlessUri,
+            ProxyProtocol.Socks5,
+            allowXrayProtocols: true,
+            out ProxyProfile? vlessProxy,
+            out _,
+            out _);
+        Assert.True(vlessOk);
+        Assert.Equal(ProxyProtocol.Vless, vlessProxy!.Protocol);
+        Assert.Equal("CAT", vlessProxy.Name);
+        Assert.Equal("www.hsbc.hk", vlessProxy.Vless?.Sni);
+    }
+
+    [Fact]
+    public void ExportSingleUri_RoundTripsStandardAndVlessProfiles()
+    {
+        var std = new ProxyProfile
+        {
+            Name = "HK Node",
+            Protocol = ProxyProtocol.Socks5,
+            Host = "203.0.113.10",
+            Port = 1080,
+            Username = "u1",
+            Password = "p#1"
+        };
+        string stdUri = ProxyBatchParser.ExportSingleUri(std);
+        Assert.True(ProxyBatchParser.TryParseSingle(stdUri, ProxyProtocol.Socks5, true, out ProxyProfile? stdParsed, out _, out _));
+        Assert.Equal(std.Host, stdParsed!.Host);
+        Assert.Equal(std.Port, stdParsed.Port);
+        Assert.Equal(std.Password, stdParsed.Password);
+        Assert.Equal(std.Name, stdParsed.Name);
+
+        var vless = new ProxyProfile
+        {
+            Name = "VLESS Reality",
+            Protocol = ProxyProtocol.Vless,
+            Host = "example.com",
+            Port = 443,
+            Vless = new VlessSettings
+            {
+                Uuid = "6611d690-5e50-403e-9a90-e1877a69e350",
+                Security = "reality",
+                Network = "ws",
+                Sni = "cdn.example.com",
+                PublicKey = "UunraCjhfc38MvRAjw_TdUlEL4_o_nYWxIkYbnMAIV8",
+                Path = "/ws"
+            }
+        };
+        string vlessUri = ProxyBatchParser.ExportSingleUri(vless);
+        Assert.StartsWith("vless://", vlessUri);
+        Assert.True(ProxyBatchParser.TryParseSingle(vlessUri, ProxyProtocol.Socks5, true, out ProxyProfile? vlessParsed, out _, out _));
+        Assert.Equal(ProxyProtocol.Vless, vlessParsed!.Protocol);
+        Assert.Equal("/ws", vlessParsed.Vless?.Path);
+        Assert.Equal("cdn.example.com", vlessParsed.Vless?.Sni);
+    }
+
+    [Fact]
+    public void ProxyProfile_IsSelectedIsNotPersisted_AndVlessSummaryFormatsCleanly()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "AppProxySelTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string cfgPath = Path.Combine(tempDir, "config.json");
+
+        try
+        {
+            var vless = new ProxyProfile
+            {
+                Name = "VNode",
+                Protocol = ProxyProtocol.Vless,
+                Host = "example.com",
+                Port = 443,
+                IsSelected = true,
+                Vless = new VlessSettings
+                {
+                    Uuid = "6611d690-5e50-403e-9a90-e1877a69e350",
+                    Network = "ws",
+                    Security = "tls",
+                    Sni = "edge.example.com",
+                    Path = "/ray"
+                }
+            };
+
+            Assert.True(vless.HasVlessSummary);
+            Assert.Equal("WS · edge.example.com · /ray", vless.VlessSummaryText);
+
+            ProxyProfile dup = vless.CreateDuplicate(["VNode"]);
+            Assert.False(dup.IsSelected);
+
+            var svc = new ConfigService(cfgPath);
+            svc.Save(new AppConfig { Proxies = [vless] });
+            AppConfig reloaded = svc.Load();
+            Assert.Single(reloaded.Proxies);
+            Assert.False(reloaded.Proxies[0].IsSelected);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
     private static async Task ReadExactAsync(Stream s, byte[] buf, CancellationToken ct)
     {
         int read = 0;

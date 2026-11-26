@@ -3,10 +3,10 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="导出代理节点"
-                 Width="680"
-                 Height="600"
-                 MinWidth="560"
-                 MinHeight="480"
+                 Width="860"
+                 Height="640"
+                 MinWidth="680"
+                 MinHeight="520"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -46,8 +46,8 @@
                         <ui:SymbolIcon Symbol="ArrowUpload24" FontSize="17" Foreground="{DynamicResource SemanticInfoBrush}" />
                     </Border>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="预览、复制到剪贴板或保存代理节点配置" FontSize="13.5" FontWeight="SemiBold" />
-                        <TextBlock Text="支持标准代理 URI 列表（socks5:// / http:// / https://）与完整 AppProxy JSON 格式，可直接用于批量导入。"
+                        <TextBlock Text="勾选需要导出的节点，实时预览、复制或保存配置" FontSize="13.5" FontWeight="SemiBold" />
+                        <TextBlock Text="支持标准代理 URI 列表（socks5:// / http:// / https:// / vless://）与完整 AppProxy JSON 格式，可直接用于单个填充或批量导入。"
                                    FontSize="11.5"
                                    Margin="0,2,0,0"
                                    TextWrapping="Wrap"
@@ -56,7 +56,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- Format & Filter Strip -->
+            <!-- Format & Selection Summary Strip -->
             <Border Grid.Row="1" Style="{StaticResource ToolbarStripStyle}" Padding="12,8" Margin="0,0,0,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -68,48 +68,279 @@
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="导出格式:" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="Medium" />
                         <ComboBox x:Name="FormatCombo"
-                                  Width="180"
+                                  Width="190"
                                   SelectionChanged="OnOptionChanged">
                             <ComboBoxItem Content="URI 列表 (每行一条)" Tag="Uri" IsSelected="True" />
                             <ComboBoxItem Content="JSON 配置" Tag="Json" />
                         </ComboBox>
-
-                        <CheckBox x:Name="FilteredOnlyCheckBox"
-                                  Margin="16,0,0,0"
-                                  VerticalAlignment="Center"
-                                  Visibility="Collapsed"
-                                  Checked="OnOptionChanged"
-                                  Unchecked="OnOptionChanged" />
                     </StackPanel>
 
-                    <TextBlock x:Name="SummaryTextBlock"
-                               Grid.Column="2"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <Border Grid.Column="2"
+                            Padding="10,3.5"
+                            CornerRadius="6"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource AppAccentBorderBrush}"
+                            Background="{DynamicResource AppAccentSoftBrush}"
+                            VerticalAlignment="Center">
+                        <TextBlock x:Name="SummaryTextBlock"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppAccentBrush}" />
+                    </Border>
                 </Grid>
             </Border>
 
-            <!-- Preview Output Box -->
-            <Border Grid.Row="2"
-                    CornerRadius="9"
-                    BorderThickness="1"
-                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                    Background="{DynamicResource InputSurfaceBgBrush}">
-                <TextBox x:Name="OutputTextBox"
-                         IsReadOnly="True"
-                         AcceptsReturn="True"
-                         TextWrapping="NoWrap"
-                         FontFamily="Consolas"
-                         FontSize="12"
-                         Padding="11,9"
-                         BorderThickness="0"
-                         Background="Transparent"
-                         VerticalContentAlignment="Top"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto" />
-            </Border>
+            <!-- Split Body: Selectable Checklist (Left) + Live Preview (Right) -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="330" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: Selectable Node Checklist Card -->
+                <Border Grid.Column="0"
+                        CornerRadius="9"
+                        ClipToBounds="True"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Header + Bulk Actions -->
+                        <Border Grid.Row="0"
+                                Padding="11,8"
+                                Background="{DynamicResource DataGridHeaderBgBrush}"
+                                BorderThickness="0,0,0,1"
+                                BorderBrush="{DynamicResource SubtleDividerBrush}">
+                            <Grid>
+                                <TextBlock Text="选择导出节点"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <ui:Button x:Name="SelectFilteredOnlyButton"
+                                               Content="仅筛选"
+                                               Appearance="Transparent"
+                                               FontSize="11"
+                                               Padding="6,2.5"
+                                               Margin="0,0,2,0"
+                                               Visibility="Collapsed"
+                                               ToolTip="仅勾选当前主页筛选命中的节点"
+                                               Click="OnSelectFilteredOnlyClick" />
+                                    <ui:Button Content="全选"
+                                               Appearance="Transparent"
+                                               FontSize="11"
+                                               Padding="6,2.5"
+                                               Margin="0,0,2,0"
+                                               Click="OnSelectAllClick" />
+                                    <ui:Button Content="反选"
+                                               Appearance="Transparent"
+                                               FontSize="11"
+                                               Padding="6,2.5"
+                                               Margin="0,0,2,0"
+                                               Click="OnInvertSelectionClick" />
+                                    <ui:Button Content="清空"
+                                               Appearance="Transparent"
+                                               FontSize="11"
+                                               Padding="6,2.5"
+                                               Click="OnClearSelectionClick" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Node Filter Input -->
+                        <Border Grid.Row="1"
+                                Padding="9,8"
+                                BorderThickness="0,0,0,1"
+                                BorderBrush="{DynamicResource SubtleDividerBrush}">
+                            <ui:TextBox x:Name="NodeFilterBox"
+                                        PlaceholderText="筛选节点名称、地址或地区..."
+                                        Icon="{ui:SymbolIcon Search24}"
+                                        FontSize="12"
+                                        TextChanged="OnNodeFilterChanged" />
+                        </Border>
+
+                        <!-- Checklist Items -->
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="6">
+                            <ItemsControl x:Name="NodeChecklistControl">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="7"
+                                                Margin="0,0,0,4"
+                                                BorderThickness="1">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource SubtleDividerBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsChecked}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBorderBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                      HorizontalContentAlignment="Stretch"
+                                                      Padding="8,6"
+                                                      Margin="0"
+                                                      Cursor="Hand">
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+                                                    <Grid Grid.Row="0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Grid.Column="0" Margin="0,0,7,0">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border" BasedOn="{StaticResource CompactPillBadgeStyle}">
+                                                                    <Setter Property="Background" Value="{DynamicResource SemanticPurpleBgBrush}" />
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SemanticPurpleBorderBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTP">
+                                                                            <Setter Property="Background" Value="{DynamicResource SemanticInfoBgBrush}" />
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticInfoBorderBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTPS">
+                                                                            <Setter Property="Background" Value="{DynamicResource SemanticSuccessBgBrush}" />
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticSuccessBorderBrush}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding ProtocolDisplay}" Value="VLESS">
+                                                                            <Setter Property="Background" Value="{DynamicResource SemanticTealBgBrush}" />
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource SemanticTealBorderBrush}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <TextBlock Text="{Binding ProtocolDisplay}" FontSize="10" FontWeight="SemiBold">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource SemanticPurpleBrush}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTP">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource SemanticInfoBrush}" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding ProtocolDisplay}" Value="HTTPS">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource SemanticSuccessBrush}" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding ProtocolDisplay}" Value="VLESS">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource SemanticTealBrush}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding Name}"
+                                                                   FontSize="12.5"
+                                                                   FontWeight="SemiBold"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center" />
+                                                    </Grid>
+
+                                                    <Grid Grid.Row="1" Margin="0,3,0,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0"
+                                                                   Text="{Binding EndpointDisplay}"
+                                                                   FontFamily="Consolas"
+                                                                   FontSize="11"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding SecondaryTag}"
+                                                                   FontSize="10.5"
+                                                                   Margin="6,0,0,0"
+                                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                    </Grid>
+                                                </Grid>
+                                            </CheckBox>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <!-- Right: Live Export Preview Card -->
+                <Border Grid.Column="2"
+                        CornerRadius="9"
+                        ClipToBounds="True"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource InputSurfaceBgBrush}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0"
+                                Padding="12,8"
+                                Background="{DynamicResource DataGridHeaderBgBrush}"
+                                BorderThickness="0,0,0,1"
+                                BorderBrush="{DynamicResource SubtleDividerBrush}">
+                            <Grid>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="导出预览"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource CompactPillBadgeStyle}" Margin="8,0,0,0">
+                                        <TextBlock x:Name="PreviewFormatBadgeText"
+                                                   Text="URI 列表"
+                                                   FontSize="10.5"
+                                                   FontWeight="Medium"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock x:Name="PreviewCountText"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Center"
+                                           FontSize="11.5"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="1">
+                            <TextBox x:Name="OutputTextBox"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="NoWrap"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     Padding="12,10"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     VerticalContentAlignment="Top"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto" />
+                            <TextBlock x:Name="EmptySelectionHintText"
+                                       Text="请在左侧勾选至少一个要导出的代理节点"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="12.5"
+                                       Visibility="Collapsed"
+                                       IsHitTestVisible="False"
+                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <!-- Inline Feedback Banner -->
             <Border x:Name="FeedbackBorder"
@@ -136,7 +367,8 @@
                 BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
             <Grid>
-                <ui:Button Content="保存为文件"
+                <ui:Button x:Name="SaveFileButton"
+                           Content="保存为文件"
                            Icon="{ui:SymbolIcon Save24}"
                            Appearance="Secondary"
                            HorizontalAlignment="Left"
@@ -152,7 +384,7 @@
                                Icon="{ui:SymbolIcon Copy24}"
                                Appearance="Primary"
                                Click="OnCopyClipboardClick"
-                               MinWidth="138" />
+                               MinWidth="154" />
                 </StackPanel>
             </Grid>
         </Border>

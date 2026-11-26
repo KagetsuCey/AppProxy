@@ -84,6 +84,34 @@ public static class ProxyBatchParser
         return new ProxyBatchParseResult(proxies, errors);
     }
 
+    public static bool TryParseSingle(
+        string? input,
+        ProxyProtocol defaultProtocol,
+        bool allowXrayProtocols,
+        out ProxyProfile? proxy,
+        out string error,
+        out int totalParsedCount)
+    {
+        ProxyBatchParseResult result = Parse(input, defaultProtocol, allowXrayProtocols);
+        totalParsedCount = result.Proxies.Count;
+        if (result.Proxies.Count > 0)
+        {
+            proxy = result.Proxies[0];
+            error = string.Empty;
+            return true;
+        }
+
+        proxy = null;
+        error = result.Errors.FirstOrDefault()?.Reason ?? "未能解析出有效的代理链接，请检查格式。";
+        return false;
+    }
+
+    public static string ExportSingleUri(ProxyProfile proxy)
+    {
+        ArgumentNullException.ThrowIfNull(proxy);
+        return ExportToUriLines([proxy]);
+    }
+
     public static string BuildDedupeKey(ProxyProfile proxy)
     {
         string host = (proxy.Host ?? string.Empty).Trim().ToLowerInvariant();

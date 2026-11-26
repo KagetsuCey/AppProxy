@@ -81,13 +81,37 @@ public partial class MainWindow : FluentWindow
 
         var allProxies = App.ViewModel.Proxies.ToList();
         var filteredProxies = App.ViewModel.FilteredProxies.Cast<ProxyProfile>().ToList();
-        bool isFiltered = !string.IsNullOrWhiteSpace(App.ViewModel.ProxySearchText);
+        bool isFiltered = App.ViewModel.HasActiveProxyFilter;
+        var preselectedIds = App.ViewModel.GetSelectedProxyIds();
 
-        var dlg = new ProxyBatchExportDialog(allProxies, filteredProxies, isFiltered) { Owner = this };
+        var dlg = new ProxyBatchExportDialog(allProxies, filteredProxies, isFiltered, preselectedIds) { Owner = this };
         dlg.ShowDialog();
         if (!string.IsNullOrWhiteSpace(dlg.LastStatusMessage))
         {
             App.ViewModel.StatusMessage = dlg.LastStatusMessage;
+        }
+    }
+
+    private void OnDeleteSelectedProxiesClick(object sender, RoutedEventArgs e)
+    {
+        List<ProxyProfile> selected = App.ViewModel.GetSelectedProxies();
+        if (selected.Count == 0) return;
+
+        var selectedIds = selected.Select(p => p.Id).ToHashSet();
+        int affectedApps = App.ViewModel.Apps.Count(a => a.ProxyProfileId.HasValue && selectedIds.Contains(a.ProxyProfileId.Value));
+
+        string prompt = affectedApps > 0
+            ? $"确定要删除选中的 {selected.Count} 个代理节点吗？\n\n其中有 {affectedApps} 个应用正在绑定这些节点，删除后将自动切换为 Direct（直连）。"
+            : $"确定要删除选中的 {selected.Count} 个代理节点吗？此操作无法撤销。";
+
+        if (System.Windows.MessageBox.Show(
+                this,
+                prompt,
+                "批量删除代理节点",
+                System.Windows.MessageBoxButton.YesNo,
+                MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes)
+        {
+            App.ViewModel.DeleteSelectedProxies();
         }
     }
 

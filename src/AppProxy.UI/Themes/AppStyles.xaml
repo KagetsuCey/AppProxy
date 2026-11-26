@@ -223,6 +223,7 @@
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Margin" Value="6,0" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
     </Style>
 
     <Style x:Key="GridMonoTextStyle" TargetType="TextBlock" BasedOn="{StaticResource GridCellTextStyle}">

@@ -22,6 +22,8 @@ public partial class ProxyProfile : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProtocolDisplay))]
+    [NotifyPropertyChangedFor(nameof(VlessSummaryText))]
+    [NotifyPropertyChangedFor(nameof(HasVlessSummary))]
     private ProxyProtocol _protocol = ProxyProtocol.Socks5;
 
     [ObservableProperty]
@@ -45,7 +47,13 @@ public partial class ProxyProfile : ObservableObject
     [NotifyPropertyChangedFor(nameof(ProtocolDisplay))]
     [NotifyPropertyChangedFor(nameof(SecurityBadgeText))]
     [NotifyPropertyChangedFor(nameof(HasSecurityBadge))]
+    [NotifyPropertyChangedFor(nameof(VlessSummaryText))]
+    [NotifyPropertyChangedFor(nameof(HasVlessSummary))]
     private VlessSettings? _vless;
+
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isSelected;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasExitInfo))]
@@ -136,6 +144,41 @@ public partial class ProxyProfile : ObservableObject
 
     [JsonIgnore]
     public bool HasSecurityBadge => !string.IsNullOrEmpty(SecurityBadgeText);
+
+    [JsonIgnore]
+    public string VlessSummaryText
+    {
+        get
+        {
+            if (Protocol != ProxyProtocol.Vless || Vless is null) return string.Empty;
+
+            var parts = new List<string>(3)
+            {
+                Vless.NormalizedNetwork.ToUpperInvariant()
+            };
+
+            string sniOrHost = !string.IsNullOrWhiteSpace(Vless.Sni)
+                ? Vless.Sni.Trim()
+                : Vless.HostHeader.Trim();
+            if (!string.IsNullOrEmpty(sniOrHost))
+            {
+                parts.Add(sniOrHost);
+            }
+
+            string pathOrService = !string.IsNullOrWhiteSpace(Vless.Path)
+                ? Vless.Path.Trim()
+                : Vless.ServiceName.Trim();
+            if (!string.IsNullOrEmpty(pathOrService))
+            {
+                parts.Add(pathOrService);
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasVlessSummary => !string.IsNullOrEmpty(VlessSummaryText);
 
     [JsonIgnore]
     public string EndpointDisplay => $"{Host}:{Port}";
@@ -306,7 +349,8 @@ public partial class ProxyProfile : ObservableObject
         IsTesting = false,
         IsDetectingExitIp = false,
         ExitDetectError = string.Empty,
-        IsExitIpCopied = false
+        IsExitIpCopied = false,
+        IsSelected = false
     };
 
     public ProxyProfile Clone() => new()
