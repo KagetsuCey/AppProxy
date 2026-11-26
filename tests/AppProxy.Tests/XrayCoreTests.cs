@@ -341,4 +341,165 @@ public class XrayCoreTests
             }
         }
     }
+
+    [Fact]
+    public async Task ProxyTester_VlessSidecarOverride_MeasuresRealEndToEndHttpLatency_NotEarlySocksAck()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var mockSocksListener = new TcpListener(IPAddress.Loopback, 0);
+        mockSocksListener.Start();
+        int socksPort = ((IPEndPoint)mockSocksListener.LocalEndpoint).Port;
+
+        Task serverTask = Task.Run(async () =>
+        {
+            using TcpClient conn = await mockSocksListener.AcceptTcpClientAsync(cts.Token);
+            using NetworkStream ns = conn.GetStream();
+
+            // Greeting (VER, NMETHODS, METHOD)
+            byte[] greet = new byte[3];
+            await ReadExactBytesAsync(ns, greet, cts.Token);
+            await ns.WriteAsync(new byte[] { 0x05, 0x00 }, cts.Token);
+
+            // CONNECT request (ATYP=0x03 domain)
+            byte[] hdr = new byte[4];
+            await ReadExactBytesAsync(ns, hdr, cts.Token);
+            Assert.Equal(0x03, hdr[3]);
+            byte[] lenBuf = new byte[1];
+            await ReadExactBytesAsync(ns, lenBuf, cts.Token);
+            byte[] domainBuf = new byte[lenBuf[0]];
+            await ReadExactBytesAsync(ns, domainBuf, cts.Token);
+            byte[] portBuf = new byte[2];
+            await ReadExactBytesAsync(ns, portBuf, cts.Token);
+
+            // Xray-core local SOCKS5 inbound immediately replies 0x05 0x00 (0-RTT early ACK)
+            await ns.WriteAsync(new byte[] { 0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0, 0 }, cts.Token);
+
+            // Wait for end-to-end HTTP probe from ProxyTester
+            byte[] reqBuf = new byte[512];
+            int n = await ns.ReadAsync(reqBuf, cts.Token);
+            string reqText = Encoding.ASCII.GetString(reqBuf, 0, n);
+            Assert.StartsWith("GET /generate_204 HTTP/1.1", reqText);
+
+            // Simulate genuine remote VLESS + REALITY + target RTT
+            await Task.Delay(90, cts.Token);
+
+            byte[] resp = Encoding.ASCII.GetBytes("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            await ns.WriteAsync(resp, cts.Token);
+        }, cts.Token);
+
+        var vlessProxy = new ProxyProfile
+        {
+            Name = "VLESS EarlyAck Test",
+            Protocol = ProxyProtocol.Vless,
+            Host = "remote.example.com",
+            Port = 443,
+            Vless = new VlessSettings
+            {
+                Uuid = "6611d690-5e50-403e-9a90-e1877a69e350",
+                Security = "reality",
+                Sni = "www.hsbc.hk",
+                PublicKey = "PUBKEY"
+            }
+        };
+
+        var sidecarOverride = new ProxyProfile
+        {
+            Id = vlessProxy.Id,
+            Name = vlessProxy.Name,
+            Protocol = ProxyProtocol.Socks5,
+            Host = "127.0.0.1",
+            Port = socksPort
+        };
+
+        await ProxyTester.TestProxyAsync(
+            vlessProxy,
+            probeHost: "www.gstatic.com",
+            probePort: 80,
+            ct: cts.Token,
+            bypassGlobalTun: true,
+            resolvedTransportOverride: sidecarOverride);
+        await serverTask;
+
+        Assert.Equal("OK", vlessProxy.LastTestStatus);
+        Assert.NotNull(vlessProxy.LastLatencyMs);
+        Assert.True(vlessProxy.LastLatencyMs >= 70, $"Expected genuine >=70ms RTT, got {vlessProxy.LastLatencyMs}ms");
+    }
+
+    [Fact]
+    public async Task ProxyTester_VlessSidecarOverride_FailsWhenRemoteClosesAfterEarlySocksAck()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var mockSocksListener = new TcpListener(IPAddress.Loopback, 0);
+        mockSocksListener.Start();
+        int socksPort = ((IPEndPoint)mockSocksListener.LocalEndpoint).Port;
+
+        Task serverTask = Task.Run(async () =>
+        {
+            using TcpClient conn = await mockSocksListener.AcceptTcpClientAsync(cts.Token);
+            using NetworkStream ns = conn.GetStream();
+
+            byte[] greet = new byte[3];
+            await ReadExactBytesAsync(ns, greet, cts.Token);
+            await ns.WriteAsync(new byte[] { 0x05, 0x00 }, cts.Token);
+
+            byte[] hdr = new byte[4];
+            await ReadExactBytesAsync(ns, hdr, cts.Token);
+            byte[] lenBuf = new byte[1];
+            await ReadExactBytesAsync(ns, lenBuf, cts.Token);
+            byte[] domainBuf = new byte[lenBuf[0]];
+            await ReadExactBytesAsync(ns, domainBuf, cts.Token);
+            byte[] portBuf = new byte[2];
+            await ReadExactBytesAsync(ns, portBuf, cts.Token);
+
+            // Immediate early ACK followed by immediate remote disconnect (no HTTP response bytes)
+            await ns.WriteAsync(new byte[] { 0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0, 0 }, cts.Token);
+        }, cts.Token);
+
+        var vlessProxy = new ProxyProfile
+        {
+            Name = "VLESS Unreachable Test",
+            Protocol = ProxyProtocol.Vless,
+            Host = "unreachable.example.com",
+            Port = 443,
+            Vless = new VlessSettings
+            {
+                Uuid = "6611d690-5e50-403e-9a90-e1877a69e350",
+                Security = "reality",
+                Sni = "www.hsbc.hk",
+                PublicKey = "PUBKEY"
+            }
+        };
+
+        var sidecarOverride = new ProxyProfile
+        {
+            Id = vlessProxy.Id,
+            Name = vlessProxy.Name,
+            Protocol = ProxyProtocol.Socks5,
+            Host = "127.0.0.1",
+            Port = socksPort
+        };
+
+        await ProxyTester.TestProxyAsync(
+            vlessProxy,
+            probeHost: "www.gstatic.com",
+            probePort: 80,
+            ct: cts.Token,
+            bypassGlobalTun: true,
+            resolvedTransportOverride: sidecarOverride);
+        await serverTask;
+
+        Assert.Null(vlessProxy.LastLatencyMs);
+        Assert.StartsWith("Error:", vlessProxy.LastTestStatus);
+    }
+
+    private static async Task ReadExactBytesAsync(Stream s, byte[] buf, CancellationToken ct)
+    {
+        int read = 0;
+        while (read < buf.Length)
+        {
+            int n = await s.ReadAsync(buf.AsMemory(read, buf.Length - read), ct);
+            if (n <= 0) throw new EndOfStreamException();
+            read += n;
+        }
+    }
 }

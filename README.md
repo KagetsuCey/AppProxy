@@ -173,7 +173,7 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version 1.1.0
    - `AppProxy.UI` 默认使用 `--launch-stdin` 匿名管道隐藏代理凭据，同时必须保留 `--launch-app-id <Guid>`（桌面快捷方式）与 `--launch-b64`（测试/脚本兼容）。
    - 运行 `scripts\package.ps1` 会先清空 `artifacts\package\AppProxy\`；若日常曾直接在该目录运行并生成了 `data\config.json`，打包前请先备份其中的 `data\` 目录。
 6. **回归测试基线**：
-   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **78 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制与命名 Mutex 锁清理、系统代理隔离、全局 TUN 绕过与多网卡故障转移、代理单链接/批量导入导出与落地 IP 检测、托管 Xray-core / VLESS REALITY 解析与物理直连拨号（`XrayCoreTests`）、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
+   - 任何修改完成后运行 `cmd /c scripts\build.bat`，当前基线包含 **80 项**自动化测试（覆盖核心单元、Bridge 生命周期、孤儿进程清理、多开实例限制与命名 Mutex 锁清理、系统代理隔离、全局 TUN 绕过与多网卡故障转移、代理单链接/批量导入导出与落地 IP 检测、托管 Xray-core / VLESS REALITY 解析与端到端 HTTP 测速探测（`XrayCoreTests`）、Fake-IP 缓存一致性、UI 并发队列、版本资源元数据及真实 `WinHTTP / webio.dll` 端到端转发）。
 
 ## 已知限制
 
